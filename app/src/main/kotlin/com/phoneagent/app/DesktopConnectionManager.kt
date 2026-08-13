@@ -2,6 +2,8 @@ package com.phoneagent.app
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.phoneagent.app.service.AgentForegroundService
 import com.phoneagent.data.DesktopPairingEntity
@@ -71,6 +73,10 @@ class DesktopConnectionManager(
     @Volatile private var client: OkHttpClient? = null
 
     fun pair(qrPayload: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            _status.value = "电脑加密连接需要 Android 13 或更高版本"
+            return
+        }
         scope.launch {
             runCatching { parseOffer(qrPayload) }
                 .onSuccess(::connect)
@@ -128,6 +134,7 @@ class DesktopConnectionManager(
         )
     }
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun connect(offer: Offer) {
         disconnectInternal(notifyService = false)
         _status.value = "正在验证电脑并建立加密连接…"
