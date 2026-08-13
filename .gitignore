@@ -17,3 +17,4 @@ artifacts/
 releases/**/*.apk
 releases/**/*.exe
 releases/**/*.png
+releases/1.2.0-dsh-preview.1/
