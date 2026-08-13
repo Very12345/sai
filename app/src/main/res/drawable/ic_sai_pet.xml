@@ -1,0 +1,43 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="64dp"
+    android:height="64dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- Transparent, one-direction sail silhouette. -->
+    <path android:pathData="M27,7L27,42C37,39 48,39 58,42C52,25 41,13 27,7z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="27" android:startY="8" android:endX="57" android:endY="42">
+                <item android:offset="0" android:color="#FF32F0E2" />
+                <item android:offset="0.48" android:color="#FF287BFF" />
+                <item android:offset="1" android:color="#FF9146FF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#FFF8D85B" android:pathData="M24.5,6L28,6L28,47L24.5,47z" />
+    <path android:pathData="M23,18C16,23 12,31 10,41C15,38 19,38 23,39L23,18z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="10" android:startY="41" android:endX="23" android:endY="18">
+                <item android:offset="0" android:color="#FFFF5B38" />
+                <item android:offset="1" android:color="#FFFF3FAE" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Hollow robot standing on the deck. -->
+    <path android:fillColor="#FF263B7A" android:strokeColor="#FFFFD84D" android:strokeWidth="1.8"
+        android:pathData="M17,30A3,3 0,0 1,20 27H26A3,3 0,0 1,29 30V36A3,3 0,0 1,26 39H20A3,3 0,0 1,17 36z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M20,32a1,1 0,1 0,2 0a1,1 0,1 0,-2 0M25,32a1,1 0,1 0,2 0a1,1 0,1 0,-2 0" />
+    <path android:fillColor="#00FFFFFF" android:strokeColor="#FFFF4FA3" android:strokeWidth="1.8"
+        android:pathData="M19,39L18,44M27,39L29,43M17,35L13,32M29,35L33,31" />
+    <path android:pathData="M6,44C20,49 42,49 60,42C55,54 38,58 21,56C13,55 8,50 6,44z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="7" android:startY="45" android:endX="59" android:endY="47">
+                <item android:offset="0" android:color="#FFFFC82E" />
+                <item android:offset="0.45" android:color="#FFFFF4CE" />
+                <item android:offset="1" android:color="#FFFF6846" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Splash droplets remain outside the hull and animate with the whole pet. -->
+    <path android:fillColor="#FF36C9E6" android:pathData="M10,55C17,58 25,59 32,58C25,62 15,61 10,55zM39,58C46,58 52,56 57,53C54,59 46,62 39,58z" />
+</vector>

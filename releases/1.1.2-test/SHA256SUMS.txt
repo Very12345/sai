@@ -1,0 +1,1 @@
+9990610fd3e5cb8f3a38a47bad3612854b6cd839a54dbcddca8a8f7e6d234c4f  sai-1.1.2-arm64-test.apk

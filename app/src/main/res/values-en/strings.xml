@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">sai</string>
+    <string name="local_runtime_warning">Local Debian/PRoot is a compatibility environment, not a security sandbox. Do not run untrusted code.</string>
+    <string name="accessibility_service_description">sai assistive device control. It reads UI content and performs actions only after the user explicitly enables it and authorizes a target app.</string>
+</resources>

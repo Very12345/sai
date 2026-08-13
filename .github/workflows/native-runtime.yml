@@ -1,0 +1,35 @@
+name: Native PRoot runtime
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        arch: [aarch64, x86_64]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Prepare Termux build host
+        run: |
+          git init "$RUNNER_TEMP/termux-setup"
+          git -C "$RUNNER_TEMP/termux-setup" remote add origin https://github.com/termux/termux-packages.git
+          git -C "$RUNNER_TEMP/termux-setup" fetch --depth 1 origin b75aa613b35f86abf0a54ed3541cb9d77fd87b54
+          git -C "$RUNNER_TEMP/termux-setup" checkout --detach FETCH_HEAD
+          sudo "$RUNNER_TEMP/termux-setup/scripts/setup-ubuntu.sh"
+      - name: Build custom-prefix PRoot and dependencies
+        env:
+          PHONEAGENT_NATIVE_WORK_ROOT: ${{ runner.temp }}/phoneagent-native
+        run: ./native/build-termux-runtime.sh '${{ matrix.arch }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phoneagent-native-${{ matrix.arch }}
+          path: |
+            app/src/main/jniLibs/**
+            app/src/main/assets/runtime/**
+            ${{ runner.temp }}/phoneagent-native/checksums-*.txt

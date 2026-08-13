@@ -1,0 +1,24 @@
+﻿{
+    "schemaVersion":  1,
+    "runtimeVersion":  "sai-dsh-0.1.0-rc.6-node-24.19.0-r2",
+    "dshVersion":  "0.1.0-rc.6",
+    "nodeVersion":  "24.19.0",
+    "sourceCommit":  "47f943859bef60e4160492346772ded9b24f765a",
+    "packageLockSha256":  {
+                              "arm64-v8a":  "ff5be8d7a3e40c42d4c56a6c77ece2a980363ed95de606a091601b2918281b76",
+                              "x86_64":  "ff5be8d7a3e40c42d4c56a6c77ece2a980363ed95de606a091601b2918281b76"
+                          },
+    "port":  3080,
+    "archives":  {
+                     "arm64-v8a":  {
+                                       "asset":  "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-arm64-v8a.tar.xz",
+                                       "sha256":  "ffa417d90f05f921172237626db98b7219940713a8557817fc2353cc1fbc6cde",
+                                       "bytes":  55725796
+                                   },
+                     "x86_64":  {
+                                    "asset":  "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-x86_64.tar.xz",
+                                    "sha256":  "09c556cd485858db486ce05ca2431b7d5ddf5d73e568c45945004ae091780885",
+                                    "bytes":  57284560
+                                }
+                 }
+}

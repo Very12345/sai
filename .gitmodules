@@ -1,0 +1,3 @@
+[submodule "dsh-plugins"]
+	path = dsh-plugins
+	url = https://github.com/Very12345/sai-dsh-plugins.git

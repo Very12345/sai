@@ -1,0 +1,15 @@
+<resources>
+    <style name="Theme.PhoneAgent" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#F8FAFC</item>
+        <item name="android:statusBarColor">#F8FAFC</item>
+    </style>
+    <style name="Theme.PhoneAgent.Transparent" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorAccent">#2563EB</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+</resources>

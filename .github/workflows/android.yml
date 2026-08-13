@@ -1,0 +1,32 @@
+name: Android
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK packages
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0' 'platform-tools' 'ndk;28.2.13676358'
+      - name: Test, lint and assemble
+        run: ./gradlew testDebugUnitTest lintDebug assembleDebug cyclonedxBom --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sai-debug
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            build/reports/**/bom.*

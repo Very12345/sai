@@ -1,0 +1,9 @@
+{
+  "version": "debian-13-trixie-pd-v4.26.0",
+  "architecture": "arm64-v8a",
+  "url": "https://github.com/termux/proot-distro/releases/download/v4.26.0/debian-trixie-aarch64-pd-v4.26.0.tar.xz",
+  "sha256": "cda75346f2c9e09e8a802665745b5a7e2bd6d8584dbf1c86c8c57ef54c4e2d3c",
+  "compressedBytes": 35407044,
+  "installedBytes": 500000000,
+  "sourceUrl": "https://github.com/termux/proot-distro/tree/v4.26.0"
+}

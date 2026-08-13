@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>sai Desktop</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <aside>
+    <div class="brand">sai</div>
+    <button id="pair">显示配对二维码</button>
+    <div id="status">未连接</div>
+    <h2>项目</h2><div id="projects" class="list empty">连接手机后显示</div>
+    <h2>会话</h2><div id="sessions" class="list empty">暂无会话</div>
+  </aside>
+  <main>
+    <header><strong id="title">局域网工作台</strong><span>危险操作仍需在手机确认</span></header>
+    <section id="welcome" class="view">
+      <div id="qr"></div>
+      <p id="pairingText">点击左侧按钮，让手机扫描二维码完成绑定。</p>
+    </section>
+    <section id="workspace" class="view hidden">
+      <nav id="breadcrumbs">选择项目后浏览文件</nav>
+      <div class="workspace-grid">
+        <div id="files" class="files"></div>
+        <div class="editor-pane">
+          <div class="editor-head"><span id="fileName">文件预览</span><button id="save" disabled>保存</button></div>
+          <textarea id="editor" spellcheck="false" placeholder="选择文本文件进行预览或编辑"></textarea>
+        </div>
+      </div>
+    </section>
+    <section id="stream" class="view hidden" aria-live="polite"></section>
+    <footer><input id="prompt" placeholder="给 sai 发送消息…" /><button id="send" disabled>发送</button></footer>
+  </main>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

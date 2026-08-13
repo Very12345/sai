@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="false" android:hasCode="false"
+        android:label="sai Voice Pack (中文 + English)"
+        android:theme="@style/Theme.SaiVoicePack" />
+</manifest>

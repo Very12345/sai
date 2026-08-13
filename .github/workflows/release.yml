@@ -1,0 +1,93 @@
+name: Release mobile and desktop
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag, for example v1.1.25
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK and NDK
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0' 'platform-tools' 'ndk;28.2.13676358'
+      - name: Test and build Android packages
+        run: ./gradlew testDebugUnitTest assembleDebug :voice-model-pack:assembleDebug -PphoneAgentDebugPackageSuffix=false -PsaiGithubRepository=${GITHUB_REPOSITORY} --stacktrace
+      - name: Prepare Android release assets
+        run: |
+          mkdir -p release-assets
+          cp app/build/outputs/apk/debug/app-arm64-v8a-debug.apk release-assets/sai-android-arm64.apk
+          cp app/build/outputs/apk/debug/app-x86_64-debug.apk release-assets/sai-android-x86_64-debug.apk
+          cp voice-model-pack/build/outputs/apk/debug/voice-model-pack-debug.apk release-assets/sai-voice-pack-zh-en.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sai-android
+          path: release-assets/*
+
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      - name: Build Windows companion
+        working-directory: desktop
+        run: pnpm build
+      - name: Prepare desktop release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-assets | Out-Null
+          $installer = Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          Copy-Item $installer.FullName release-assets/sai-desktop-windows-setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sai-desktop
+          path: release-assets/*
+
+  publish:
+    needs: [android, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: release-assets
+        run: sha256sum * > SHA256SUMS.txt
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: release-assets/*

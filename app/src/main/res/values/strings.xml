@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">sai</string>
+    <string name="accessibility_service_description">sai 手机辅助控制。仅在用户明确启用并授权目标 App 后读取界面与执行操作。</string>
+    <string name="local_runtime_warning">本地 Debian/PRoot 是兼容环境，不是安全沙箱。请勿运行不可信代码。</string>
+</resources>

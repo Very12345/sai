@@ -1,0 +1,15 @@
+{
+  "name": "sai-dsh-plugin",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness bridge for the sai Android coding agent",
+  "type": "module",
+  "main": "index.js",
+  "files": ["index.js", "cordis.patch.yml", "README.md", "LICENSE"],
+  "license": "GPL-3.0-only",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=0.1.0-rc.5",
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.5"
+  },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "scripts": { "test": "node --test" }
+}

@@ -1,0 +1,6 @@
+$env:CARGO_HOME = 'D:\Code\Rust\cargo'
+$env:RUSTUP_HOME = 'D:\Code\Rust\rustup'
+$env:CARGO_TARGET_DIR = 'D:\Code\Build\PhoneAgentDesktop\cargo-target'
+$env:PNPM_HOME = 'D:\Code\Node\pnpm'
+$env:PNPM_STORE_DIR = 'D:\Code\Node\pnpm-store'
+Write-Host 'PhoneAgent Desktop toolchain paths are pinned under D:\Code.'

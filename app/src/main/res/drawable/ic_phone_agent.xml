@@ -1,0 +1,52 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M18,8h72a14,14 0,0 1,14 14v64a14,14 0,0 1,-14 14H18A14,14 0,0 1,4 86V22A14,14 0,0 1,18 8z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="9" android:startY="8" android:endX="101" android:endY="101">
+                <item android:offset="0" android:color="#FF080D2D" />
+                <item android:offset="0.54" android:color="#FF19154E" />
+                <item android:offset="1" android:color="#FF071A31" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- One directional mainsail: a single flowing surface, not a mirrored emblem. -->
+    <path android:pathData="M43,15L43,67C57,64 75,63 92,68C82,43 65,24 43,15z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="44" android:startY="17" android:endX="91" android:endY="68">
+                <item android:offset="0" android:color="#FF35F4E7" />
+                <item android:offset="0.48" android:color="#FF2A8BFF" />
+                <item android:offset="1" android:color="#FF8B42FF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#86FFFFFF" android:pathData="M48,23C62,31 76,47 85,61C73,54 61,51 50,51C51,39 50,30 48,23z" />
+    <path android:fillColor="#FFF7D85A" android:pathData="M40,13L45,13L45,75L40,75z" />
+
+    <!-- A high-contrast forward pennant balances the large single sail. -->
+    <path android:pathData="M38,28C27,36 20,48 17,63C25,59 32,58 38,59L38,28z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="18" android:startY="60" android:endX="38" android:endY="29">
+                <item android:offset="0" android:color="#FFFF513D" />
+                <item android:offset="1" android:color="#FFFF3FB5" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Long forward hull, clearly travelling to the right. -->
+    <path android:pathData="M12,70C36,76 69,78 99,68C93,84 71,92 42,90C27,89 17,82 12,70z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="15" android:startY="72" android:endX="96" android:endY="77">
+                <item android:offset="0" android:color="#FFFFC928" />
+                <item android:offset="0.36" android:color="#FFFFF6CE" />
+                <item android:offset="0.62" android:color="#FFF8FBFF" />
+                <item android:offset="1" android:color="#FFFF6A43" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#82FFFFFF" android:pathData="M29,78C49,84 73,80 91,73C75,86 49,90 29,78z" />
+</vector>

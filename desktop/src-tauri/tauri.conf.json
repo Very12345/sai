@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "sai Desktop",
+  "version": "1.1.25",
+  "identifier": "com.phoneagent.desktop",
+  "build": { "frontendDist": "../dist" },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{ "title": "sai Desktop", "width": 1120, "height": 760, "minWidth": 760, "minHeight": 520 }],
+    "security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" }
+  },
+  "bundle": { "active": true, "targets": ["nsis"], "icon": [] }
+}
