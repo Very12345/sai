@@ -7,6 +7,7 @@ import com.phoneagent.runtime.RunRequest
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 
 data class GitHubCliStatus(
     val installed: Boolean,
@@ -41,6 +42,51 @@ class GitHubCliManager(
             Result.success(statusLocked())
         } catch (error: Throwable) {
             Result.failure(error)
+        }
+    }
+
+    /**
+     * Uses gh's OAuth device flow in an isolated temporary config directory. The resulting token is
+     * copied directly into Android Keystore-backed storage and the gh config is deleted by a shell
+     * trap. Only the one-time user code is exposed to the UI callback.
+     */
+    suspend fun loginWithDeviceFlow(onCode: (String) -> Unit): Result<GitHubCliStatus> = mutex.withLock {
+        val observedCode = AtomicReference<String?>(null)
+        val loginOutput = StringBuilder()
+        val command = """
+            gh_config=${'$'}(mktemp -d)
+            trap 'rm -rf "${'$'}gh_config"' EXIT
+            export GH_CONFIG_DIR="${'$'}gh_config"
+            export BROWSER=echo
+            gh auth login --hostname github.com --git-protocol https --web --skip-ssh-key
+            printf '\nSAI_GH_TOKEN='
+            gh auth token --hostname github.com
+        """.trimIndent()
+        runCatching {
+            val result = runtime.runStreaming(
+                RunRequest(
+                    command = command,
+                    workingDirectory = "/home/phoneagent",
+                    workspaceHostPath = workspace.absolutePath,
+                    timeoutMillis = 10 * 60_000L,
+                    outputLimitBytes = 200_000,
+                    environment = mapOf("GH_PAGER" to "cat"),
+                ),
+            ) { output ->
+                val searchable = synchronized(loginOutput) {
+                    loginOutput.append(output.text)
+                    if (loginOutput.length > 8_192) loginOutput.delete(0, loginOutput.length - 8_192)
+                    loginOutput.toString()
+                }
+                DEVICE_CODE.find(searchable)?.value?.let { code ->
+                    if (observedCode.getAndSet(code) != code) onCode(code)
+                }
+            }
+            check(result.exitCode == 0) { sanitize(result.stderr.ifBlank { result.stdout }) }
+            val token = TOKEN_RESULT.find(result.stdout)?.groupValues?.getOrNull(1)
+                ?: error("GitHub 设备登录完成，但未能取得临时凭据")
+            secrets.put(TOKEN_ALIAS, token.toCharArray())
+            statusLocked()
         }
     }
 
@@ -93,5 +139,9 @@ class GitHubCliManager(
 
     private fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"
 
-    companion object { private const val TOKEN_ALIAS = "github:github.com:token" }
+    companion object {
+        private const val TOKEN_ALIAS = "github:github.com:token"
+        private val DEVICE_CODE = Regex("(?<![A-Z0-9])[A-Z0-9]{4}-[A-Z0-9]{4}(?![A-Z0-9])")
+        private val TOKEN_RESULT = Regex("SAI_GH_TOKEN=([^\\s]+)")
+    }
 }

@@ -963,6 +963,14 @@ private fun DshAgentScreen(state: MainUiState, viewModel: MainViewModel) {
                         Spacer(Modifier.width(8.dp))
                         Text("重试")
                     }
+                    if (state.dshRollbackAvailable) {
+                        OutlinedButton(onClick = viewModel::rollbackDshRuntime) {
+                            Text("回滚上一代运行时")
+                        }
+                    }
+                    TextButton(onClick = viewModel::restoreBundledDshRuntime) {
+                        Text("恢复 APK 内置运行时")
+                    }
                 }
             }
         }
@@ -4038,6 +4046,21 @@ private fun SettingsScreen(
                             Text("退出 GitHub")
                         }
                     } ?: run {
+                        Button(
+                            onClick = viewModel::loginGitHubWithDevice,
+                            enabled = state.githubCliStatus.installed && !state.githubCliBusy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(if (state.githubCliBusy) "等待 GitHub 授权…" else "使用浏览器设备登录") }
+                        state.githubDeviceCode?.let { code ->
+                            Text("设备码：$code", style = MaterialTheme.typography.titleMedium)
+                            OutlinedButton(
+                                onClick = {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/login/device")))
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("打开 GitHub 验证页") }
+                        }
+                        HorizontalDivider()
                         OutlinedTextField(
                             value = state.githubTokenInput,
                             onValueChange = viewModel::updateGitHubToken,
@@ -4050,7 +4073,7 @@ private fun SettingsScreen(
                             onClick = viewModel::loginGitHub,
                             enabled = state.githubCliStatus.installed && state.githubTokenInput.isNotBlank() && !state.githubCliBusy,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("验证并登录") }
+                        ) { Text("使用 Token 登录（高级）") }
                     }
                     Text(
                         "登录只用于 gh 和 GitHub 扩展操作；令牌不会进入模型提示词、Debian 环境文件或普通日志。",

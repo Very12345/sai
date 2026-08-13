@@ -16,6 +16,8 @@ class DshRuntimeProvisioner(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
     val root = File(context.filesDir, "dsh")
     val current = File(root, "runtime/current")
+    private val previous = File(root, "runtime/previous")
+    private val rollbackPin = File(root, "runtime/.rollback-pinned")
     val home = File(root, "home")
     val manifest: DshRuntimeManifest by lazy {
         context.assets.open(MANIFEST_ASSET).bufferedReader().use {
@@ -23,10 +25,21 @@ class DshRuntimeProvisioner(private val context: Context) {
         }
     }
 
-    fun isInstalled(): Boolean =
-        File(current, ".installed").readTextOrNull() == manifest.runtimeVersion &&
+    val activeRuntimeVersion: String?
+        get() = File(current, ".installed").readTextOrNull()
+
+    fun isInstalled(): Boolean {
+        val installed = activeRuntimeVersion
+        val accepted = installed == manifest.runtimeVersion || rollbackPin.readTextOrNull() == installed
+        return accepted &&
             File(current, "node/bin/node").isFile &&
             File(current, "app/node_modules/@deepseek-ai/dsh/lib/bin.js").isFile
+    }
+
+    fun canRollback(): Boolean =
+        File(previous, ".installed").isFile &&
+            File(previous, "node/bin/node").isFile &&
+            File(previous, "app/node_modules/@deepseek-ai/dsh/lib/bin.js").isFile
 
     suspend fun install(onProgress: (Float) -> Unit = {}) = withContext(Dispatchers.IO) {
         if (isInstalled()) {
@@ -67,16 +80,44 @@ class DshRuntimeProvisioner(private val context: Context) {
             }
             File(staging, ".installed").writeText(manifest.runtimeVersion)
             home.mkdirs()
-            val previous = File(root, "runtime/previous")
             if (previous.exists()) previous.deleteRecursively()
             if (current.exists() && !current.renameTo(previous)) error("Cannot preserve previous DSH runtime")
-            if (!staging.renameTo(current)) error("Cannot activate DSH runtime")
+            if (!staging.renameTo(current)) {
+                if (previous.exists()) previous.renameTo(current)
+                error("Cannot activate DSH runtime")
+            }
+            rollbackPin.delete()
             ensureBundledPresets()
             onProgress(1f)
         } catch (error: Throwable) {
             staging.deleteRecursively()
             throw error
         }
+    }
+
+    /** Swaps current and previous without deleting either runtime. Call only while DSH is stopped. */
+    fun rollback(): String {
+        check(canRollback()) { "No verified previous DSH runtime is available" }
+        val swap = File(root, "runtime/swap-${System.nanoTime()}")
+        check(current.renameTo(swap)) { "Cannot stage the current DSH runtime" }
+        try {
+            check(previous.renameTo(current)) { "Cannot activate the previous DSH runtime" }
+            check(swap.renameTo(previous)) { "Cannot preserve the replaced DSH runtime" }
+        } catch (error: Throwable) {
+            if (!current.exists() && previous.exists()) previous.renameTo(current)
+            if (swap.exists() && !previous.exists()) swap.renameTo(previous)
+            throw error
+        }
+        val version = activeRuntimeVersion ?: error("Rolled back runtime has no version marker")
+        rollbackPin.parentFile?.mkdirs()
+        rollbackPin.writeText(version)
+        ensureBundledPresets()
+        return version
+    }
+
+    /** Allows the bundled runtime to replace a user-selected rollback on next install. */
+    fun selectBundledRuntime() {
+        rollbackPin.delete()
     }
 
     fun ensureBundledPresets() {

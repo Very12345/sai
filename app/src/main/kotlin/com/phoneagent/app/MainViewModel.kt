@@ -123,12 +123,14 @@ data class MainUiState(
     val terminalConnected: Boolean = false,
     val runtimeCapability: RuntimeCapability? = null,
     val dshRuntime: DshRuntimeState = DshRuntimeState(),
+    val dshRollbackAvailable: Boolean = false,
     val rootfsInstallState: RootfsInstallState = RootfsInstallState.NotInstalled,
     val runtimeSelfTestOutput: String = "",
     val runtimeSelfTestRunning: Boolean = false,
     val githubCliStatus: GitHubCliStatus = GitHubCliStatus(false, detail = "等待本地环境"),
     val githubTokenInput: String = "",
     val githubCliBusy: Boolean = false,
+    val githubDeviceCode: String? = null,
     val provider: ProviderProfile = ProviderPresets.all.first(),
     val providerProfiles: List<ProviderProfile> = emptyList(),
     val providerApiKey: String = "",
@@ -216,7 +218,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         loadExtensionRecommendations()
         viewModelScope.launch {
             container.dshRuntime.state.collectLatest { dsh ->
-                _ui.update { it.copy(dshRuntime = dsh) }
+                _ui.update { it.copy(
+                    dshRuntime = dsh,
+                    dshRollbackAvailable = container.dshProvisioner.canRollback(),
+                ) }
             }
         }
         viewModelScope.launch {
@@ -1276,6 +1281,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun restartDshRuntime() = viewModelScope.launch { container.dshRuntime.restart() }
 
+    fun rollbackDshRuntime() = viewModelScope.launch {
+        runCatching { container.dshRuntime.rollback() }
+            .onSuccess { _ui.update { state -> state.copy(message = "已回滚到上一代 DeepSeek Harness 运行时") } }
+            .onFailure { error -> _ui.update { state -> state.copy(message = error.message ?: "DSH 运行时回滚失败") } }
+    }
+
+    fun restoreBundledDshRuntime() = viewModelScope.launch {
+        runCatching { container.dshRuntime.restoreBundledRuntime() }
+            .onSuccess { _ui.update { state -> state.copy(message = "已恢复 APK 内置 DeepSeek Harness 运行时") } }
+            .onFailure { error -> _ui.update { state -> state.copy(message = error.message ?: "DSH 运行时恢复失败") } }
+    }
+
     fun updateGitHubToken(value: String) = _ui.update { it.copy(githubTokenInput = value) }
 
     fun refreshVoiceModelPack() = _ui.update { it.copy(voiceModelPackInstalled = VoiceModelPack.isInstalled(getApplication())) }
@@ -1301,6 +1318,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .onFailure { error ->
                     _ui.update { it.copy(githubCliBusy = false, message = "GitHub 登录失败：${error.message}") }
                 }
+        }
+    }
+
+    fun loginGitHubWithDevice() {
+        if (_ui.value.githubCliBusy || !_ui.value.githubCliStatus.installed) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _ui.update { it.copy(githubCliBusy = true, githubDeviceCode = null, message = "正在申请 GitHub 设备码…") }
+            container.githubCli.loginWithDeviceFlow { code ->
+                _ui.update { it.copy(githubDeviceCode = code, message = "请在 GitHub 验证页输入设备码 $code") }
+            }.onSuccess { status ->
+                _ui.update { it.copy(githubCliBusy = false, githubDeviceCode = null, githubCliStatus = status, message = "GitHub 登录成功") }
+            }.onFailure { error ->
+                _ui.update { it.copy(githubCliBusy = false, githubDeviceCode = null, message = error.message ?: "GitHub 设备登录失败") }
+            }
         }
     }
 

@@ -2,6 +2,7 @@ param(
     [string]$CacheRoot = 'D:\Code\sai-dsh-runtime',
     [string]$NodeVersion = '24.19.0',
     [string]$DshVersion = '0.1.0-rc.6',
+    [int]$RuntimeRevision = 3,
     [switch]$ReuseInstalledStages
 )
 
@@ -95,15 +96,19 @@ foreach ($target in @(
 '@ | Set-Content -Encoding utf8 (Join-Path $app 'sai.cordis.patch.yml')
     Copy-Item -Force -LiteralPath (Join-Path $PSScriptRoot 'sai-dsh-launcher.mjs') -Destination (Join-Path $app 'sai-dsh-launcher.mjs')
 
-    if (-not $reuse) {
-        $oldOs = $env:npm_config_os; $oldCpu = $env:npm_config_cpu
-        try {
-            $env:npm_config_os = 'linux'
-            $env:npm_config_cpu = $target.NpmCpu
+    $oldOs = $env:npm_config_os; $oldCpu = $env:npm_config_cpu
+    try {
+        $env:npm_config_os = 'linux'
+        $env:npm_config_cpu = $target.NpmCpu
+        if ($reuse) {
+            # File dependencies may have changed even though the expensive DSH closure is reused.
+            # Refresh the lock so it remains an accurate, auditable description of the archive.
+            Invoke-Checked 'npm.cmd' @('install','--package-lock-only','--ignore-scripts','--no-audit','--no-fund') $app
+        } else {
             Invoke-Checked 'npm.cmd' @('install','--omit=dev','--ignore-scripts','--no-audit','--no-fund','--package-lock=true') $app
-        } finally {
-            $env:npm_config_os = $oldOs; $env:npm_config_cpu = $oldCpu
         }
+    } finally {
+        $env:npm_config_os = $oldOs; $env:npm_config_cpu = $oldCpu
     }
     $lockHashes[$abi] = (Get-FileHash -Algorithm SHA256 (Join-Path $app 'package-lock.json')).Hash.ToLowerInvariant()
 
@@ -122,7 +127,7 @@ foreach ($target in @(
 
 $manifest = [ordered]@{
     schemaVersion = 1
-    runtimeVersion = "sai-dsh-$DshVersion-node-$NodeVersion-r2"
+    runtimeVersion = "sai-dsh-$DshVersion-node-$NodeVersion-r$RuntimeRevision"
     dshVersion = $DshVersion
     nodeVersion = $NodeVersion
     sourceCommit = '47f943859bef60e4160492346772ded9b24f765a'

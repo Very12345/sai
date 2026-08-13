@@ -22,6 +22,9 @@ the DSH session format.
 
 The APK carries Node 24.19.0 and `@deepseek-ai/dsh 0.1.0-rc.6` for ARM64/x86_64. The archive is
 SHA-256 verified, unpacked into app-private storage and retains one previous runtime for rollback.
+The `current`/`previous` swap is atomic and a rollback marker prevents startup from immediately
+overwriting the selected previous closure. “Restore bundled runtime” clears that marker and performs
+the normal verified activation path.
 DSH runs inside Debian/PRoot with the complete private `workspaces` directory mounted at
 `/home/phoneagent`; each session receives its own project cwd.
 
@@ -33,6 +36,8 @@ origin. No website receives `addJavascriptInterface`.
 Host plugins reach Android through a loopback-only authenticated bridge. API keys and GitHub tokens
 remain in Android Keystore; the replacement DSH credential provider resolves a named reference for
 one request and does not write the value to settings, environment snapshots, logs or exports.
+GitHub browser device login runs `gh` against an isolated temporary config directory, copies only the
+resulting credential to Keystore, and deletes the directory before returning control to the UI.
 
 ## Session migration
 

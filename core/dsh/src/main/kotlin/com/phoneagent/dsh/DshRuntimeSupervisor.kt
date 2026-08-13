@@ -58,6 +58,29 @@ class DshRuntimeSupervisor(
         }
     }
 
+    suspend fun rollback() = lifecycle.withLock {
+        stopProcess()
+        val version = provisioner.rollback()
+        requested.set(true)
+        _state.value = DshRuntimeState(
+            DshRuntimePhase.STARTING,
+            "Starting rolled back DeepSeek Harness",
+            runtimeVersion = version,
+        )
+        startProcess()
+    }
+
+    suspend fun restoreBundledRuntime() = lifecycle.withLock {
+        stopProcess()
+        provisioner.selectBundledRuntime()
+        requested.set(true)
+        _state.value = DshRuntimeState(DshRuntimePhase.INSTALLING, "Restoring bundled DSH runtime", 0f)
+        provisioner.install { progress ->
+            _state.value = DshRuntimeState(DshRuntimePhase.INSTALLING, "Restoring bundled DSH runtime", progress)
+        }
+        startProcess()
+    }
+
     suspend fun stop() = lifecycle.withLock {
         requested.set(false)
         _state.value = _state.value.copy(phase = DshRuntimePhase.STOPPING, detail = "Stopping DSH")
@@ -92,7 +115,8 @@ class DshRuntimeSupervisor(
             Base64.getUrlEncoder().withoutPadding().encodeToString(it).also { _ -> it.fill(0) }
         }
         webToken = accessToken
-        _state.value = DshRuntimeState(DshRuntimePhase.STARTING, "Starting DeepSeek Harness", runtimeVersion = manifest.runtimeVersion)
+        val activeVersion = provisioner.activeRuntimeVersion ?: manifest.runtimeVersion
+        _state.value = DshRuntimeState(DshRuntimePhase.STARTING, "Starting DeepSeek Harness", runtimeVersion = activeVersion)
         job = runtime.startJob(
             RunRequest(
                 command = command,
@@ -123,7 +147,7 @@ class DshRuntimeSupervisor(
                     "DeepSeek Harness ${manifest.dshVersion} ready",
                     1f,
                     url,
-                    manifest.runtimeVersion,
+                    activeVersion,
                     accessToken,
                 )
                 monitor(url, accessToken)
@@ -160,7 +184,7 @@ class DshRuntimeSupervisor(
     }
 
     private fun initialState() = if (provisioner.isInstalled()) {
-        DshRuntimeState(DshRuntimePhase.NOT_INSTALLED, "DSH is installed and stopped", runtimeVersion = provisioner.manifest.runtimeVersion)
+        DshRuntimeState(DshRuntimePhase.NOT_INSTALLED, "DSH is installed and stopped", runtimeVersion = provisioner.activeRuntimeVersion)
     } else DshRuntimeState()
 
     private fun String.shellQuote(): String = "'" + replace("'", "'\\''") + "'"

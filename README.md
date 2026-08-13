@@ -48,8 +48,10 @@ model API credentials.
   cannot approve dangerous actions on behalf of the phone.
 - ABI-matched PRoot/loader libraries for ARM64 and x86_64, a native `forkpty`
   bridge, and an interactive terminal surface.
-- Offline-bundled GitHub CLI 2.97.0 for ARM64/x86_64, with a Keystore-backed
-  login facade that injects `GH_TOKEN` only into the individual `gh` child process.
+- Offline-bundled GitHub CLI 2.97.0 for ARM64/x86_64, with browser device login
+  and an optional advanced Token entry. Both paths migrate the credential into
+  Android Keystore, erase the temporary `gh` config, and inject `GH_TOKEN` only
+  into the individual trusted child process.
 - A shared request-protection layer for model APIs, GitHub, MCP/Skill catalogs:
   bounded concurrency, GitHub mutation serialization, `Retry-After` handling,
   exponential backoff for idempotent requests, and host cooldowns.
@@ -58,6 +60,9 @@ model API credentials.
 - The base Debian 13 runtime, Git, GitHub CLI, Node 24 and pinned DSH are bundled
   for offline first start with SHA-256 verification. Optional language toolchains
   and the independently uninstallable Voice Pack remain separate downloads.
+- Runtime activation is atomic. The previous verified DSH closure remains available
+  from the failure screen; a rollback is pinned across app restarts until the user
+  explicitly restores the APK-bundled runtime.
 
 The provider harness, GUI, persistence, approval system, native PRoot runtime,
 PTY bridge and rootfs installer build together as an ARM64 or x86_64 APK.
@@ -83,7 +88,10 @@ Release at runtime.
 Pushing a version tag such as `v1.2.0-dsh-preview.1` runs the unified release workflow. It
 tests and packages the ARM64/x86_64 Android builds, builds the Windows NSIS
 installer, creates the optional `sai-voice-pack-zh-en.apk`, generates
-`SHA256SUMS.txt`, and publishes all outputs in one Release.
+`SHA256SUMS.txt`, CycloneDX SBOM and license notices, and publishes all outputs
+in one Release. The two ABI-specific DSH Runtime Packs are released alongside a
+detached Ed25519 signature so the runtime and the Android shell have independent
+update artifacts.
 
 ## Build
 
