@@ -4,7 +4,7 @@ sai is a GPLv3 Android coding agent designed around a local workspace. Its name 
 a Debian/PRoot-compatible runtime, explicit tool approvals, and bring-your-own
 model API credentials.
 
-## Current implementation (1.2.0 DSH preview)
+## Current implementation (1.2.0 DSH preview 2)
 
 - Official DeepSeek Harness is the sole interactive Agent engine. The APK starts pinned DSH 0.1.0-rc.6
   on offline Node 24.19.0 inside app-private Debian/PRoot and embeds its authenticated Web client in
@@ -67,7 +67,7 @@ model API credentials.
 The provider harness, GUI, persistence, approval system, native PRoot runtime,
 PTY bridge and rootfs installer build together as an ARM64 or x86_64 APK.
 Native artifacts can be reproduced with the pinned staging or from-source
-workflows documented in [native/README.md](native/README.md). The 1.2.0 preview ARM64
+workflows documented in [native/README.md](native/README.md). The 1.2.0 preview 2 ARM64
 build is intended for in-place validation on a vivo X200s-class device without clearing app data. It
 includes the compact two-row composer, canvas-style PTY terminal, single-instance
 task pet, settings search, and full application themes.
@@ -85,7 +85,7 @@ GitHub Pages on every push to `main`. It introduces both the Android app and the
 Windows companion, and resolves its download buttons against the latest GitHub
 Release at runtime.
 
-Pushing a version tag such as `v1.2.0-dsh-preview.1` runs the unified release workflow. It
+Pushing a version tag such as `v1.2.0-dsh-preview.2` runs the unified release workflow. It
 tests and packages the ARM64/x86_64 Android builds, builds the Windows NSIS
 installer, creates the optional `sai-voice-pack-zh-en.apk`, generates
 `SHA256SUMS.txt`, CycloneDX SBOM and license notices, and publishes all outputs

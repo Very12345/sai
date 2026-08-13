@@ -28,16 +28,24 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK and NDK
         run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0' 'platform-tools' 'ndk;28.2.13676358'
+      - name: Materialize Android release keystore
+        env:
+          SAI_ANDROID_KEYSTORE_BASE64: ${{ secrets.SAI_ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$SAI_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sai-release.jks"
       - name: Test and build Android packages
-        run: ./gradlew testDebugUnitTest assembleDebug :voice-model-pack:assembleDebug cyclonedxBom -PphoneAgentDebugPackageSuffix=false -PsaiGithubRepository=${GITHUB_REPOSITORY} --stacktrace
+        env:
+          SAI_ANDROID_STORE_PASSWORD: ${{ secrets.SAI_ANDROID_STORE_PASSWORD }}
+          SAI_ANDROID_KEY_ALIAS: ${{ secrets.SAI_ANDROID_KEY_ALIAS }}
+          SAI_ANDROID_KEY_PASSWORD: ${{ secrets.SAI_ANDROID_KEY_PASSWORD }}
+        run: ./gradlew testDebugUnitTest assembleRelease :voice-model-pack:assembleRelease cyclonedxBom -PsaiSigningStoreFile="$RUNNER_TEMP/sai-release.jks" -PsaiGithubRepository=${GITHUB_REPOSITORY} --stacktrace
       - name: Prepare Android release assets
         env:
           SAI_RUNTIME_ED25519_PRIVATE_KEY: ${{ secrets.SAI_RUNTIME_ED25519_PRIVATE_KEY }}
         run: |
           mkdir -p release-assets
-          cp app/build/outputs/apk/debug/app-arm64-v8a-debug.apk release-assets/sai-android-arm64.apk
-          cp app/build/outputs/apk/debug/app-x86_64-debug.apk release-assets/sai-android-x86_64-debug.apk
-          cp voice-model-pack/build/outputs/apk/debug/voice-model-pack-debug.apk release-assets/sai-voice-pack-zh-en.apk
+          cp app/build/outputs/apk/release/app-arm64-v8a-release.apk release-assets/sai-android-arm64.apk
+          cp app/build/outputs/apk/release/app-x86_64-release.apk release-assets/sai-android-x86_64.apk
+          cp voice-model-pack/build/outputs/apk/release/voice-model-pack-release.apk release-assets/sai-voice-pack-zh-en.apk
           cp build/reports/cyclonedx/bom.json release-assets/sai-sbom.cdx.json
           cp LICENSE release-assets/LICENSE.txt
           cp THIRD_PARTY_NOTICES.md release-assets/THIRD_PARTY_NOTICES.md
