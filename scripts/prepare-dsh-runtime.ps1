@@ -2,7 +2,7 @@ param(
     [string]$CacheRoot = 'D:\Code\sai-dsh-runtime',
     [string]$NodeVersion = '24.19.0',
     [string]$DshVersion = '0.1.0-rc.6',
-    [int]$RuntimeRevision = 38,
+    [int]$RuntimeRevision = 47,
     [string]$DshForkRoot = 'D:\Code\deepseek-harness',
     [switch]$ReuseInstalledStages
 )
@@ -210,7 +210,10 @@ foreach ($target in @(
     $archiveName = "sai-dsh-$DshVersion-node-$NodeVersion-$abi.tar.xz"
     $archive = Join-Path $assetRoot $archiveName
     if (Test-Path $archive) { Remove-Item -LiteralPath $archive -Force }
-    $temporaryTar = Join-Path $CacheRoot "$archiveName.tmp.tar"
+    # A cancelled local build may leave Windows tar holding its previous
+    # output briefly. Per-process names make retries independent and keep all
+    # large intermediates under D:\Code.
+    $temporaryTar = Join-Path $CacheRoot "$archiveName.$PID.tmp.tar"
     $temporaryXz = "$temporaryTar.xz"
     if (Test-Path $temporaryTar) { Remove-Item -LiteralPath $temporaryTar -Force }
     if (Test-Path $temporaryXz) { Remove-Item -LiteralPath $temporaryXz -Force }
@@ -227,12 +230,17 @@ foreach ($target in @(
     }
 }
 
+$sourceCommit = (& git -C $DshForkRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') {
+    throw "Cannot resolve audited DSH fork commit from $DshForkRoot"
+}
+
 $manifest = [ordered]@{
     schemaVersion = 1
     runtimeVersion = "sai-dsh-$DshVersion-node-$NodeVersion-r$RuntimeRevision"
     dshVersion = $DshVersion
     nodeVersion = $NodeVersion
-    sourceCommit = 'f0ecffb84a0740edb091e02c0b0812626d5a879a'
+    sourceCommit = $sourceCommit
     sourceRepository = 'https://github.com/Very12345/deepseek-harness'
     webUiVariant = "sai-mobile-r$RuntimeRevision"
     packageLockSha256 = $lockHashes

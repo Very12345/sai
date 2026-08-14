@@ -13,6 +13,7 @@ data class GitHubCliStatus(
     val installed: Boolean,
     val version: String? = null,
     val login: String? = null,
+    val avatarUrl: String? = null,
     val detail: String = "",
 )
 
@@ -36,6 +37,7 @@ class GitHubCliManager(
         val value = token.concatToString()
         token.fill('\u0000')
         try {
+            installer.install().getOrThrow()
             val result = runGh(listOf("api", "user", "--jq", ".login"), value)
             check(result.exitCode == 0) { sanitize(result.stderr.ifBlank { result.stdout }) }
             secrets.put(TOKEN_ALIAS, value.toCharArray())
@@ -51,6 +53,7 @@ class GitHubCliManager(
      * trap. Only the one-time user code is exposed to the UI callback.
      */
     suspend fun loginWithDeviceFlow(onCode: (String) -> Unit): Result<GitHubCliStatus> = mutex.withLock {
+        installer.install().getOrElse { return@withLock Result.failure(it) }
         val observedCode = AtomicReference<String?>(null)
         val loginOutput = StringBuilder()
         val command = """
@@ -113,9 +116,10 @@ class GitHubCliManager(
         val chars = secrets.get(TOKEN_ALIAS) ?: return GitHubCliStatus(true, version, detail = "未登录")
         val token = chars.concatToString()
         chars.fill('\u0000')
-        val account = runGh(listOf("api", "user", "--jq", ".login"), token, 30_000)
+        val account = runGh(listOf("api", "user", "--jq", "[.login,.avatar_url]|@tsv"), token, 30_000)
         return if (account.exitCode == 0) {
-            GitHubCliStatus(true, version, sanitize(account.stdout).trim(), "已登录")
+            val fields = sanitize(account.stdout).trim().split('\t', limit = 2)
+            GitHubCliStatus(true, version, fields.firstOrNull(), fields.getOrNull(1), "已登录")
         } else {
             GitHubCliStatus(true, version, detail = "凭据已保存，但当前无法验证：${sanitize(account.stderr).take(160)}")
         }

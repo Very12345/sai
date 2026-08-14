@@ -25,29 +25,95 @@ body {
   background: linear-gradient(135deg, #173048, #14283a);
 }
 
-.engine-flow {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr auto 1fr;
+.phone {
+  color: #171923;
+  border-color: rgba(255, 255, 255, 0.78);
+  background: linear-gradient(160deg, #fbfcff 0%, #f1f4fb 58%, #edf1fa 100%);
+  box-shadow: 0 50px 120px #0008, 0 0 80px #6d5cff25;
+}
+
+.phone::before {
+  background: #171923;
+}
+
+.phone-bar {
+  color: #353847;
+}
+
+.agent-head {
+  border: 1px solid rgba(28, 35, 58, 0.08);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 22px rgba(38, 50, 85, 0.07);
+}
+
+.agent-head small {
+  color: #3166df;
+}
+
+.session-row {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  margin-top: 12px;
-  padding: 10px;
-  border: 1px solid rgba(103, 232, 255, 0.18);
-  border-radius: 13px;
-  background: linear-gradient(120deg, rgba(85, 217, 255, 0.08), rgba(138, 98, 255, 0.1));
-  color: #8cecff;
-  font-size: 8px;
-  text-align: center;
+  justify-content: space-between;
+  margin: 12px 2px 0;
+  padding: 0 8px;
+  color: #6e7486;
+  font-size: 10px;
 }
 
-.engine-flow span {
-  padding: 5px 3px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.06);
+.session-row em {
+  color: #2563eb;
+  font-style: normal;
 }
 
-.engine-flow b {
-  color: #a8ffcf;
+.task {
+  margin-top: 8px;
+  border-color: rgba(34, 43, 70, 0.1);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 28px rgba(38, 50, 85, 0.07);
+}
+
+.task > span {
+  color: #2563eb;
+}
+
+.task > em {
+  color: #7b8192;
+}
+
+.thought {
+  color: #697083;
+  border-left-color: #5b73ef;
+  background: #f7f8fc;
+  border-radius: 0 9px 9px 0;
+}
+
+.tool {
+  color: #3b4050;
+  background: #eef2f8;
+}
+
+.tool b {
+  color: #315fe7;
+}
+
+.tool mark {
+  color: #16805a;
+}
+
+.composer {
+  border-color: rgba(34, 43, 70, 0.12);
+  color: #303545;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 28px rgba(38, 50, 85, 0.12);
+}
+
+.composer p {
+  color: #959aaa;
+}
+
+.composer div b:last-child {
+  color: #fff;
+  background: linear-gradient(135deg, #3469f0, #7259e8);
 }
 
 @media (max-width: 900px) {

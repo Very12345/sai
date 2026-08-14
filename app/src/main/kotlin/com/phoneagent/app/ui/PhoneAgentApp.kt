@@ -1,6 +1,7 @@
 package com.phoneagent.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -128,6 +129,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
@@ -137,6 +139,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -154,6 +158,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
@@ -164,6 +169,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import android.annotation.SuppressLint
+import android.graphics.BitmapFactory
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -194,7 +200,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -3356,7 +3364,7 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                 ) {
                     Text(state.extensionFeedTitle, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     if (state.extensionQuery.isBlank()) Text(
-                        "按热度排序 · skills.sh 公开榜单",
+                        "GitHub 实时搜索 · skills.sh 热榜 · 失败时使用缓存",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -3390,6 +3398,27 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
             "Hooks" -> HookConfigurationPane(state, viewModel)
             else -> ExtensionDiagnosticsPane(state)
         }
+    }
+    if (state.extensionPreflightRunning) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("DSH 插件安装预检") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { state.extensionPreflightProgress.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(state.extensionPreflightStage ?: "正在预检…")
+                    Text(
+                        "正在实时读取仓库清单、验证 DSH 入口、扫描权限并计算摘要。此过程不会执行第三方安装脚本。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {},
+        )
     }
     state.extensionPlan?.let { plan ->
         AlertDialog(
@@ -3685,6 +3714,31 @@ private fun CompactOutlinedField(value: String, onValueChange: (String) -> Unit,
 @Composable
 private fun CompactFieldLabel(text: String) {
     Text(text, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+}
+
+@Composable
+private fun GitHubAvatar(url: String?, login: String) {
+    val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(initialValue = null, url) {
+        value = if (url.isNullOrBlank() || !url.startsWith("https://avatars.githubusercontent.com/")) null else {
+            withContext(Dispatchers.IO) {
+                runCatching { URL(url).openStream().buffered().use { BitmapFactory.decodeStream(it) }?.asImageBitmap() }
+                    .getOrNull()
+            }
+        }
+    }
+    Surface(
+        modifier = Modifier.size(52.dp).clip(CircleShape),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        if (bitmap != null) {
+            Image(bitmap = bitmap!!, contentDescription = "$login 的 GitHub 头像", contentScale = ContentScale.Crop)
+        } else {
+            Box(contentAlignment = Alignment.Center) {
+                Text(login.take(1).uppercase(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
 }
 
 @Composable
@@ -4218,14 +4272,21 @@ private fun SettingsScreen(
                         }
                     }
                     state.githubCliStatus.login?.let { login ->
-                        Text("已登录 @$login。令牌由 Android Keystore 加密，不写入 Debian 配置。")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            GitHubAvatar(state.githubCliStatus.avatarUrl, login)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text("@$login", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text("已登录 · 凭据由 Android Keystore 加密", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                         OutlinedButton(onClick = viewModel::logoutGitHub, modifier = Modifier.fillMaxWidth(), enabled = !state.githubCliBusy) {
                             Text("退出 GitHub")
                         }
                     } ?: run {
                         Button(
                             onClick = viewModel::loginGitHubWithDevice,
-                            enabled = state.githubCliStatus.installed && !state.githubCliBusy,
+                            enabled = !state.githubCliBusy,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text(if (state.githubCliBusy) "等待 GitHub 授权…" else "浏览器网页登录（推荐）") }
                         state.githubDeviceCode?.let { code ->
@@ -4249,7 +4310,7 @@ private fun SettingsScreen(
                         )
                         Button(
                             onClick = viewModel::loginGitHub,
-                            enabled = state.githubCliStatus.installed && state.githubTokenInput.isNotBlank() && !state.githubCliBusy,
+                            enabled = state.githubTokenInput.isNotBlank() && !state.githubCliBusy,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("使用 Token 登录（高级）") }
                     }

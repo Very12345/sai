@@ -296,19 +296,22 @@ class ExtensionCatalogClient(
      * bundle declaration are installable on a phone; source-only TypeScript projects
      * remain visible in the catalog but are deliberately rejected here.
      */
-    suspend fun stageDshPlugin(item: CatalogExtension): ExtensionInstallPlan = withContext(Dispatchers.IO) {
+    suspend fun stageDshPlugin(
+        item: CatalogExtension,
+        onProgress: (stage: String, progress: Float) -> Unit = { _, _ -> },
+    ): ExtensionInstallPlan = withContext(Dispatchers.IO) {
         require(item.kind == ExtensionKind.PLUGIN) { "只有插件条目可以使用 DSH 便携安装器" }
         require(item.id.startsWith("dsh:")) { "该插件没有可验证的 GitHub DSH 源；当前只能查看介绍" }
         val repositoryId = item.id.removePrefix("dsh:")
         val parts = repositoryId.split('/')
         require(parts.size == 2) { "DSH 插件仓库标识无效" }
         val (owner, repository) = parts
+        onProgress("正在读取 GitHub 仓库信息…", 0.08f)
         val repo = getJson("https://api.github.com/repos/$owner/$repository").jsonObject
         val branch = repo.stringAt("default_branch") ?: "main"
         val license = (repo["license"] as? JsonObject)?.stringAt("spdx_id", "name")
-        require(!license.isNullOrBlank() && license !in setOf("NOASSERTION", "OTHER")) {
-            "仓库没有可验证的开源许可证，不能便携安装"
-        }
+        val licenseUnknown = license.isNullOrBlank() || license in setOf("NOASSERTION", "OTHER")
+        onProgress("正在读取文件树与兼容清单…", 0.2f)
         val tree = getJson("https://api.github.com/repos/$owner/$repository/git/trees/${urlPart(branch)}?recursive=1")
             .jsonObject.arrayAt("tree").mapNotNull { it as? JsonObject }
         val packageEntry = tree
@@ -322,6 +325,7 @@ class ExtensionCatalogClient(
             "https://raw.githubusercontent.com/$owner/$repository/${urlPath(branch)}/${urlPath(packagePath)}",
             "text/plain",
         )
+        onProgress("正在验证 DSH bundle 与预构建入口…", 0.38f)
         val manifest = json.parseToJsonElement(packageText).jsonObject
         val scripts = manifest["scripts"] as? JsonObject
         val blockedScripts = setOf("preinstall", "install", "postinstall", "prepare", "prepublish", "prepublishOnly")
@@ -356,8 +360,13 @@ class ExtensionCatalogClient(
         require(selected.size <= 160) { "插件预构建包文件过多（${selected.size}），请使用作者提供的 npm tarball 或 Release" }
         val permissions = mutableSetOf(ExtensionPermission.WORKSPACE_READ)
         val warnings = mutableListOf<String>()
+        if (licenseUnknown) warnings += "未检测到明确开源许可证；公开仓库不等同于 MIT，请在安装和使用前自行确认作者授权"
         var totalBytes = 0
-        val files = selected.map { entry ->
+        val files = selected.mapIndexed { index, entry ->
+            onProgress(
+                "正在下载并扫描文件 ${index + 1}/${selected.size}…",
+                0.5f + (index.toFloat() / selected.size.coerceAtLeast(1)) * 0.42f,
+            )
             val remotePath = entry.stringAt("path") ?: error("插件文件路径无效")
             val relative = validateRelativePath(remotePath.removePrefix(prefix))
             val declaredSize = (entry["size"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
@@ -371,6 +380,7 @@ class ExtensionCatalogClient(
             StagedExtensionFile(relative, contents, sha256(contents.encodeToByteArray()))
         }
         require(files.any { it.path == main.removePrefix("./") }) { "暂存包缺少声明的入口文件" }
+        onProgress("正在计算摘要与安装计划…", 0.95f)
         warnings += "第三方 DSH 插件安装后默认禁用；启用会重启当前 DSH Profile"
         val digest = sha256(files.sortedBy { it.path }.joinToString("\n") { "${it.path}:${it.digest}" }.encodeToByteArray())
         ExtensionInstallPlan(

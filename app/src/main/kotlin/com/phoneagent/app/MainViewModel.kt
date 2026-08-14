@@ -156,6 +156,9 @@ data class MainUiState(
     val extensionQuery: String = "",
     val extensionResults: List<CatalogExtension> = emptyList(),
     val extensionSearchRunning: Boolean = false,
+    val extensionPreflightRunning: Boolean = false,
+    val extensionPreflightStage: String? = null,
+    val extensionPreflightProgress: Float = 0f,
     val extensionPlan: ExtensionInstallPlan? = null,
     val extensionAudit: CapabilityDiagnostic? = null,
     val extensionError: String? = null,
@@ -212,6 +215,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val extensionCatalog = ExtensionCatalogClient(
         githubTokenProvider = { container.secretStore.get("github:github.com:token") },
     )
+    private var extensionRecommendationCache: List<CatalogExtension> = emptyList()
     private val extensionInstaller by lazy { ExtensionInstaller(File(getApplication<Application>().filesDir, "extensions")) }
     private val desktopConnection = container.desktopConnection
 
@@ -1544,14 +1548,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _ui.update { it.copy(extensionSearchRunning = true, extensionError = null, extensionFeedTitle = "热门推荐") }
             runCatching { extensionCatalog.recommendations() }
-                .onSuccess { results -> _ui.update { it.copy(
-                    extensionSearchRunning = false,
-                    extensionResults = results,
-                    extensionError = if (results.isEmpty()) "暂时无法加载热门推荐，请稍后重试" else null,
-                ) } }
+                .onSuccess { results ->
+                    if (results.isNotEmpty()) extensionRecommendationCache = results
+                    _ui.update { it.copy(
+                        extensionSearchRunning = false,
+                        extensionResults = results.ifEmpty { extensionRecommendationCache },
+                        extensionFeedTitle = if (results.isEmpty() && extensionRecommendationCache.isNotEmpty()) "热门推荐 · 缓存" else "热门推荐 · 实时",
+                        extensionError = if (results.isEmpty() && extensionRecommendationCache.isEmpty()) "暂时无法加载热门推荐，请稍后重试" else null,
+                    ) }
+                }
                 .onFailure { error -> _ui.update { it.copy(
                     extensionSearchRunning = false,
-                    extensionError = error.message ?: "热门推荐加载失败",
+                    extensionResults = extensionRecommendationCache.ifEmpty { it.extensionResults },
+                    extensionFeedTitle = if (extensionRecommendationCache.isNotEmpty()) "热门推荐 · 缓存" else "热门推荐",
+                    extensionError = if (extensionRecommendationCache.isEmpty()) error.message ?: "热门推荐加载失败" else null,
                 ) } }
         }
     }
@@ -1581,11 +1591,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         viewModelScope.launch {
-            _ui.update { it.copy(extensionSearchRunning = true, extensionError = null, extensionPlan = null, extensionAudit = null) }
+            _ui.update { it.copy(
+                extensionPreflightRunning = true,
+                extensionPreflightStage = "正在准备预检…",
+                extensionPreflightProgress = 0.03f,
+                extensionError = null,
+                extensionPlan = null,
+                extensionAudit = null,
+            ) }
             val planResult = runCatching {
                 when (item.kind) {
                     ExtensionKind.SKILL -> extensionCatalog.stageSkill(item)
-                    ExtensionKind.PLUGIN -> extensionCatalog.stageDshPlugin(item)
+                    ExtensionKind.PLUGIN -> extensionCatalog.stageDshPlugin(item) { stage, progress ->
+                        _ui.update { it.copy(extensionPreflightStage = stage, extensionPreflightProgress = progress) }
+                    }
                     else -> error("该扩展类型暂不支持便携安装")
                 }
             }
@@ -1593,11 +1612,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching { extensionCatalog.skillAudit(item.id) }.getOrNull()
             } else null
             planResult.onSuccess { plan -> _ui.update { it.copy(
-                extensionSearchRunning = false,
+                extensionPreflightRunning = false,
+                extensionPreflightStage = null,
+                extensionPreflightProgress = 1f,
                 extensionPlan = plan,
                 extensionAudit = audit,
             ) } }.onFailure { error -> _ui.update { it.copy(
-                extensionSearchRunning = false,
+                extensionPreflightRunning = false,
+                extensionPreflightStage = null,
+                extensionPreflightProgress = 0f,
                 extensionError = error.message,
                 message = error.message ?: "无法取得可验证的扩展快照",
             ) } }

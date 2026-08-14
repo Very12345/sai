@@ -51,7 +51,7 @@ class ExtensionZipImporter(private val resolver: ContentResolver) {
             packageManifest?.containsKey("dsh") == true || hasCordisPatch -> ExtensionKind.PLUGIN
             else -> error("ZIP 中未找到 SKILL.md、.mcp.json 或有效 DSH bundle")
         }
-        if (kind == ExtensionKind.PLUGIN) validateDshPlugin(packageManifest, normalizedFiles, hasCordisPatch)
+        if (kind == ExtensionKind.PLUGIN) validateDshPlugin(packageManifest, normalizedFiles, hasCordisPatch, warnings)
         val digest = sha256(normalizedFiles.sortedBy { it.path }
             .joinToString("\n") { "${it.path}:${it.digest}" }.encodeToByteArray())
         val id = displayName.removeSuffix(".zip").replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { digest.take(12) }
@@ -91,12 +91,13 @@ class ExtensionZipImporter(private val resolver: ContentResolver) {
         manifest: JsonObject?,
         files: List<StagedExtensionFile>,
         hasCordisPatch: Boolean,
+        warnings: MutableList<String>,
     ) {
         requireNotNull(manifest) { "DSH 插件缺少根 package.json" }
         require(manifest.containsKey("dsh") || hasCordisPatch) { "插件没有 DSH bundle 或 Cordis patch" }
         val license = (manifest["license"] as? JsonPrimitive)?.contentOrNull
-        require(!license.isNullOrBlank() || files.any { it.path.startsWith("LICENSE", true) }) {
-            "DSH 插件没有可验证的许可证"
+        if (license.isNullOrBlank() && files.none { it.path.startsWith("LICENSE", true) }) {
+            warnings += "DSH 插件没有可验证的许可证；公开源码不等同于 MIT，请自行确认作者授权"
         }
         val scripts = manifest["scripts"] as? JsonObject
         val forbidden = LIFECYCLE_SCRIPTS.filter { scripts?.containsKey(it) == true }
