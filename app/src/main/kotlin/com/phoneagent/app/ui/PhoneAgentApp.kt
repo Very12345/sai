@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.RecordVoiceOver
@@ -336,6 +337,10 @@ fun PhoneAgentApp(
                     if (state.runState in setOf(AgentRunState.RUNNING, AgentRunState.WAITING_APPROVAL)) {
                         IconButton(onClick = viewModel::stopAgent) { Icon(Icons.Default.Stop, "停止 Agent") }
                     }
+                    // The in-app pet is drawn above the scaffold so its launch animation can
+                    // leave the app smoothly. Reserve a real action slot for it instead of
+                    // letting it cover the project-folder and stop buttons underneath.
+                    if (state.taskPetVisible && !sidebarOpen) Spacer(Modifier.width(82.dp))
                 },
             )
         },
@@ -3260,6 +3265,51 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                item {
+                    Text(
+                        "随 sai 启用的 DSH 插件",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                items(
+                    listOf(
+                        Triple("sai-android", "Android 与 Agent 浏览器", "文件、终端、浏览器、通知及系统能力桥"),
+                        Triple("sai-artifacts", "文件与网址卡片", "打开、预览、保存、分享和导出"),
+                        Triple("sai-models", "多提供商模型", "模型发现、推理档位、会话绑定与计费"),
+                        Triple("sai-vision", "辅助识图", "纯文本模型自动路由到优先视觉模型"),
+                        Triple("sai-voice", "离线语音", "语音输入、连续通话、打断与朗读工具"),
+                        Triple("sai-request-guard", "请求保护", "并发队列、冷却、限流与熔断"),
+                        Triple("sai-market", "扩展市场", "MCP、Skills 与 DSH 插件发现和预检"),
+                        Triple("sai-pet", "任务宠物", "任务、审批和语音状态联动"),
+                        Triple("sai-ui", "移动会话界面", "紧凑输入、工具折叠与移动端布局"),
+                    ),
+                    key = { "builtin:${it.first}" },
+                ) { (id, title, summary) ->
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Default.Extension, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(title, fontWeight = FontWeight.Bold)
+                                Text(id, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            AssistChip(onClick = {}, label = { Text("内置 · 已启用") })
+                        }
+                    }
+                }
+                item {
+                    Text(
+                        "用户安装的扩展",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 if (state.installedExtensions.isEmpty()) item { ExtensionCard("尚未安装扩展", "可在“发现”中搜索，或在 MCP/Skills 标签中添加自定义来源。") }
                 items(state.installedExtensions, key = { it.id }) { extension ->
                     ElevatedCard(Modifier.fillMaxWidth()) {
@@ -4138,6 +4188,15 @@ private fun SettingsScreen(
         }
         if (section == "accounts/github") {
         item {
+            LaunchedEffect(state.githubDeviceCode) {
+                if (!state.githubDeviceCode.isNullOrBlank()) {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/login/device")))
+                    }
+                }
+            }
+        }
+        item {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -4168,9 +4227,10 @@ private fun SettingsScreen(
                             onClick = viewModel::loginGitHubWithDevice,
                             enabled = state.githubCliStatus.installed && !state.githubCliBusy,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text(if (state.githubCliBusy) "等待 GitHub 授权…" else "使用浏览器设备登录") }
+                        ) { Text(if (state.githubCliBusy) "等待 GitHub 授权…" else "浏览器网页登录（推荐）") }
                         state.githubDeviceCode?.let { code ->
                             Text("设备码：$code", style = MaterialTheme.typography.titleMedium)
+                            Text("浏览器已打开 GitHub 授权页。输入上方设备码并确认后，sai 会自动完成登录。", style = MaterialTheme.typography.bodySmall)
                             OutlinedButton(
                                 onClick = {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/login/device")))

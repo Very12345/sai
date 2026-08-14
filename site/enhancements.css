@@ -1,0 +1,71 @@
+html,
+body {
+  overflow-x: clip;
+}
+
+.download-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.voice-mark {
+  width: 70px;
+  height: 70px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  color: #08111c;
+  background: linear-gradient(135deg, #67e8ff, #a8ffcf);
+  font-size: 42px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.download-card.voice {
+  background: linear-gradient(135deg, #173048, #14283a);
+}
+
+.engine-flow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: center;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid rgba(103, 232, 255, 0.18);
+  border-radius: 13px;
+  background: linear-gradient(120deg, rgba(85, 217, 255, 0.08), rgba(138, 98, 255, 0.1));
+  color: #8cecff;
+  font-size: 8px;
+  text-align: center;
+}
+
+.engine-flow span {
+  padding: 5px 3px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.engine-flow b {
+  color: #a8ffcf;
+}
+
+@media (max-width: 900px) {
+  .download-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .hero-visual {
+    overflow: clip;
+    border-radius: 34px;
+  }
+
+  .voice-mark {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    font-size: 34px;
+  }
+}

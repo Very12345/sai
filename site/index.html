@@ -8,6 +8,7 @@
   <title>sai · 随身本地编码 Agent</title>
   <link rel="icon" href="sai.svg" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="enhancements.css" />
 </head>
 <body>
   <div class="aurora aurora-a"></div><div class="aurora aurora-b"></div>
@@ -19,25 +20,26 @@
   <main id="top">
     <section class="hero shell">
       <div class="hero-copy reveal">
-        <div class="eyebrow"><i></i> Android 本地工作区 · 开源 GPLv3</div>
+        <div class="eyebrow"><i></i> DeepSeek Harness 内核 · Android 本地工作区</div>
         <h1>让想法，<br /><span>从掌心扬帆。</span></h1>
-        <p>sai 是运行在 Android 上的本地编码 Agent。它以官方 DeepSeek Harness 为唯一 Agent 引擎，把 Debian、终端、Git、Skills 与 DSH 插件生态放进一个安全、可审核的移动工作台。</p>
+        <p>sai 是运行在 Android 上的本地编码 Agent。它以官方 DeepSeek Harness 为唯一 Agent 引擎，把 Debian、项目终端、Git、Agent 浏览器、多模态路由与 DSH 插件生态放进一个安全、可审核的移动工作台。</p>
         <div class="actions"><a class="primary" data-mobile-download href="#download">下载 Android APK <span>↓</span></a><a class="secondary" data-desktop-download href="#download">获取 Windows 桌面端</a></div>
-        <div class="meta"><span>Android 10+</span><span>ARM64</span><span>BYO API Key</span><span>无云端中继</span></div>
+        <div class="meta"><span>sai GPLv3</span><span>DSH MIT</span><span>Android 10+</span><span>BYO API Key</span><span>无云端中继</span></div>
       </div>
       <div class="hero-visual reveal delay">
         <div class="orbit orbit-a"></div><div class="orbit orbit-b"></div>
         <div class="phone">
           <div class="phone-bar"><span>9:41</span><b>sai</b><span>● ●●</span></div>
-          <div class="agent-head"><img src="sai.svg" alt="sai" /><div><strong>移动工作台</strong><small>本地环境已就绪</small></div><i></i></div>
-          <div class="task"><span>正在工作</span><em>2 / 4</em><h3>构建登录页并运行测试</h3><div class="thought">分析项目结构与 API 路由…</div><div class="tool"><b>›_</b><span>pytest -q</span><mark>通过</mark></div></div>
+          <div class="agent-head"><img src="sai.svg" alt="sai" /><div><strong>DeepSeek Harness</strong><small>DSH · Cordis · MIT</small></div><i></i></div>
+          <div class="engine-flow"><span>Compose 外壳</span><b>→</b><span>DSH Agent</span><b>→</b><span>Android 工具桥</span></div>
+          <div class="task"><span>DSH 正在工作</span><em>2 / 4</em><h3>构建登录页并运行测试</h3><div class="thought">追加事件 · 稳定工具契约 · 插件路由</div><div class="tool"><b>›_</b><span>sai_mobile · pytest</span><mark>通过</mark></div></div>
           <div class="composer"><p>给 sai 发送消息…</p><div><b>＋</b><span>◈ 自动批准</span><i></i><span>DeepSeek V4 · High⌄</span><b>↑</b></div></div>
         </div>
-        <div class="desktop-card"><div class="traffic"><i></i><i></i><i></i></div><strong>sai Desktop</strong><small>已与 vivo X200s 安全连接</small><div class="desktop-grid"><span>Project</span><b>index.html</b><b>server.py</b><b>tests/</b></div></div>
+        <div class="desktop-card"><div class="traffic"><i></i><i></i><i></i></div><strong>Cordis Plugin Runtime</strong><small>UI · Models · Vision · Voice · Android</small><div class="desktop-grid"><span>DSH</span><b>append-only events</b><b>tool approvals</b><b>context checkpoints</b></div></div>
         <div class="pet"><span>✦</span><img src="sai.svg" alt="任务宠物" /><small>正在划船执行任务</small></div>
       </div>
     </section>
-    <section class="ticker"><div>Compose <i>✦</i> Debian 13 <i>✦</i> Git <i>✦</i> Python <i>✦</i> MCP <i>✦</i> Skills <i>✦</i> Tauri Desktop <i>✦</i> Local Voice <i>✦</i></div></section>
+    <section class="ticker"><div>DeepSeek Harness <i>✦</i> Compose <i>✦</i> Debian 13 <i>✦</i> Git <i>✦</i> Agent Browser <i>✦</i> Vision Routing <i>✦</i> MCP <i>✦</i> Skills <i>✦</i> Local Voice <i>✦</i></div></section>
     <section id="experience" class="section shell">
       <div class="section-title reveal"><span>01 / MOBILE FIRST</span><h2>不是缩小的电脑界面，<br />是为触屏重做的 Agent。</h2></div>
       <div class="experience-grid">
@@ -47,14 +49,16 @@
       </div>
     </section>
     <section id="features" class="section shell">
-      <div class="section-title reveal"><span>02 / AGENT HARNESS</span><h2>真正能把工作做完的工具链。</h2></div>
+      <div class="section-title reveal"><span>02 / DEEPSEEK HARNESS</span><h2>官方 DSH 内核，<br />移动端原生外壳。</h2><p>sai 不再维护平行的 Agent loop。会话、工具、事件和上下文由 DeepSeek Harness 驱动，Android 能力通过受限桥和 Cordis 插件接入；保留 DSH 的 MIT 许可证与来源声明。</p></div>
       <div class="capabilities">
         <article><b>01</b><h3>文件与代码</h3><p>资源管理器、Sora 编辑器、搜索替换、Diff 审批、Git 检查点和消息级撤回。</p></article>
-        <article><b>02</b><h3>扩展生态</h3><p>MCP、Skills、Hooks 与插件市场；ZIP/Git 安装先扫描、再授权、默认禁用。</p></article>
-        <article><b>03</b><h3>Agent 浏览器</h3><p>DOM 观察、点击、输入、提交与截图。页面内容始终作为不可信数据处理。</p></article>
+        <article><b>02</b><h3>可见的扩展生态</h3><p>MCP、Skills 与 DSH 插件统一管理；“已安装”页同时展示内置运行时插件和用户扩展。</p></article>
+        <article><b>03</b><h3>Agent 浏览器</h3><p>按项目隔离的后台 WebView，支持 DOM 观察、点击、输入、提交与截图；网页内容始终标记为不可信。</p></article>
         <article><b>04</b><h3>可卸载离线语音</h3><p>Voice Pack 提供流式识别与终稿校正，可独立安装或卸载；语音通话支持持续倾听、工具朗读和插话转向。</p></article>
-        <article><b>05</b><h3>安全审批</h3><p>请求批准、风险批准与完全访问三档策略。危险操作不能由桌面端远程代批。</p></article>
-        <article><b>06</b><h3>桌面协作</h3><p>局域网扫码配对，Windows 端浏览项目、编辑文件并跟随基础对话流。</p></article>
+        <article><b>05</b><h3>辅助识图</h3><p>纯文本主模型收到图片时，优先调用同一提供商视觉模型生成结构化观察，不会偷换会话模型。</p></article>
+        <article><b>06</b><h3>安全审批</h3><p>请求批准、风险批准与完全访问三档策略。危险操作不能由桌面端远程代批。</p></article>
+        <article><b>07</b><h3>GitHub 与市场</h3><p>内置 gh，支持浏览器设备码登录；令牌进入 Android Keystore，并用于低频缓存的扩展发现。</p></article>
+        <article><b>08</b><h3>桌面协作</h3><p>局域网扫码配对，Windows 端浏览项目、编辑文件并跟随基础对话流。</p></article>
       </div>
     </section>
     <section id="security" class="section shell security">
@@ -62,15 +66,16 @@
       <div class="security-cards reveal"><div><i>✓</i><span>API Key 不注入 Debian</span></div><div><i>✓</i><span>写操作串行并展示 Diff</span></div><div><i>✓</i><span>扩展安装阻止路径逃逸</span></div><div><i>✓</i><span>局域网连接端到端加密</span></div></div>
     </section>
     <section id="download" class="section shell download">
-      <div class="section-title reveal"><span>04 / DOWNLOAD</span><h2>手机与电脑，同一股风。</h2><p>GitHub Release 自动生成固定证书签名的 Android ARM64/x86_64 APK、Windows 安装程序、Voice Pack、SBOM 和 SHA-256 校验清单。</p></div>
+      <div class="section-title reveal"><span>04 / DOWNLOAD</span><h2>手机与电脑，同一股风。</h2><p>GitHub Release 自动生成固定证书签名的 Android ARM64/x86_64 APK、Windows 安装程序、可卸载 Voice Pack、SBOM 和 SHA-256 校验清单。应用内也可直接跳转到最新 Voice Pack。</p></div>
       <div class="download-grid">
         <a class="download-card mobile reveal" data-mobile-download href="#"><div class="platform">ANDROID</div><img src="sai.svg" alt="" /><div><h3>sai Mobile</h3><p>Android 10+ · ARM64</p></div><b>↓</b></a>
         <a class="download-card reveal" data-desktop-download href="#"><div class="platform">WINDOWS</div><div class="windows">⊞</div><div><h3>sai Desktop</h3><p>Windows 10/11 · x64</p></div><b>↓</b></a>
+        <a class="download-card voice reveal" data-voice-download href="#"><div class="platform">OPTIONAL</div><div class="voice-mark">≋</div><div><h3>Voice Pack</h3><p>中英离线识别 · 可卸载</p></div><b>↓</b></a>
       </div>
       <p class="release-note" id="release-note">正在读取最新版本…</p>
     </section>
   </main>
-  <footer class="shell"><a class="brand" href="#top"><img src="sai.svg" alt="" /><span>sai</span></a><p>Open source under GPLv3 · Built for work that moves.</p><span id="year"></span></footer>
+  <footer class="shell"><a class="brand" href="#top"><img src="sai.svg" alt="" /><span>sai</span></a><p>sai: GPLv3 · DeepSeek Harness: MIT · Built for work that moves.</p><span id="year"></span></footer>
   <script src="app.js"></script>
 </body>
 </html>
