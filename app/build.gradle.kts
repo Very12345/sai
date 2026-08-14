@@ -79,7 +79,6 @@ android {
 }
 
 dependencies {
-    implementation(project(":core:agent"))
     implementation(project(":core:provider"))
     implementation(project(":core:runtime"))
     implementation(project(":core:data"))

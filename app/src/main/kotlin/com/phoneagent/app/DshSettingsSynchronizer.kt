@@ -5,6 +5,7 @@ import com.phoneagent.data.ProviderModelEntity
 import com.phoneagent.dsh.DshRuntimeProvisioner
 import com.phoneagent.provider.ProviderProfile
 import com.phoneagent.provider.ProviderProtocol
+import com.phoneagent.provider.ModelVisionPolicy
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +26,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 /** Mirrors non-secret provider metadata into DSH. API keys remain credential references. */
@@ -124,6 +126,13 @@ class DshSettingsSynchronizer(
         put("name", model.displayName.ifBlank { model.modelId })
         put("contextWindow", model.contextWindow.coerceAtLeast(1))
         put("maxTokens", profile.maxOutputTokens.coerceAtLeast(1))
+        val capabilities = runCatching { json.parseToJsonElement(model.capabilitiesJson).jsonObject }.getOrDefault(JsonObject(emptyMap()))
+        val modalities = capabilities["inputModalities"]?.let { value ->
+            runCatching { value.jsonArray.mapNotNull { it.jsonPrimitive.contentOrNull } }.getOrNull()
+        }.orEmpty().ifEmpty {
+            if (ModelVisionPolicy.supportsImageInput(model.modelId)) listOf("text", "image") else listOf("text")
+        }
+        put("inputModalities", buildJsonArray { modalities.distinct().forEach { add(JsonPrimitive(it)) } })
         val efforts = runCatching { json.parseToJsonElement(model.reasoningEffortsJson).jsonArray }
             .getOrDefault(JsonArray(emptyList())).mapNotNull { it.jsonPrimitive.contentOrNull }
         val supportedEfforts = efforts.mapNotNull { effort ->

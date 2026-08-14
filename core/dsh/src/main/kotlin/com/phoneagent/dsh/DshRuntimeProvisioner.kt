@@ -21,7 +21,7 @@ class DshRuntimeProvisioner(private val context: Context) {
     val home = File(root, "home")
     val manifest: DshRuntimeManifest by lazy {
         context.assets.open(MANIFEST_ASSET).bufferedReader().use {
-            json.decodeFromString<DshRuntimeManifest>(it.readText())
+            json.decodeDshRuntimeManifest(it.readText())
         }
     }
 
@@ -31,8 +31,9 @@ class DshRuntimeProvisioner(private val context: Context) {
     fun isInstalled(): Boolean {
         val installed = activeRuntimeVersion
         val accepted = installed == manifest.runtimeVersion || rollbackPin.readTextOrNull() == installed
+        val node = File(current, "node/bin/node")
         return accepted &&
-            File(current, "node/bin/node").isFile &&
+            ensureRuntimeExecutable(node) &&
             File(current, "app/node_modules/@deepseek-ai/dsh/lib/bin.js").isFile
     }
 
@@ -56,11 +57,25 @@ class DshRuntimeProvisioner(private val context: Context) {
         val staging = File(root, "runtime/staging-${System.nanoTime()}")
         staging.mkdirs()
         try {
+            // Verify the complete compressed asset before extraction. Digesting
+            // underneath XZCompressorInputStream is subtly wrong: the tar reader
+            // may stop at the tar EOF before the XZ footer has been consumed,
+            // producing a hash of only a prefix of the APK asset.
             val digest = MessageDigest.getInstance("SHA-256")
+            context.assets.open(archive.asset).buffered().use { input ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var count = input.read(buffer)
+                while (count >= 0) {
+                    if (count > 0) digest.update(buffer, 0, count)
+                    count = input.read(buffer)
+                }
+            }
+            val actual = digest.digest().joinToString("") { "%02x".format(it) }
+            check(actual.equals(archive.sha256, ignoreCase = true)) { "DSH archive SHA-256 mismatch" }
+
             var copied = 0L
             val input = context.assets.open(archive.asset)
-            val verified = java.security.DigestInputStream(input, digest)
-            TarArchiveInputStream(XZCompressorInputStream(verified, true)).use { tar ->
+            TarArchiveInputStream(XZCompressorInputStream(input, true)).use { tar ->
                 var entry: TarArchiveEntry? = tar.nextEntry
                 while (entry != null) {
                     extractEntry(staging, entry, tar)
@@ -69,14 +84,15 @@ class DshRuntimeProvisioner(private val context: Context) {
                     entry = tar.nextEntry
                 }
             }
-            val actual = digest.digest().joinToString("") { "%02x".format(it) }
-            check(actual.equals(archive.sha256, ignoreCase = true)) { "DSH archive SHA-256 mismatch" }
             manifest.packageLockSha256[abi]?.let { expected ->
                 val lock = File(staging, "app/package-lock.json")
                 check(lock.isFile) { "DSH runtime is missing package-lock.json" }
                 val lockHash = MessageDigest.getInstance("SHA-256").digest(lock.readBytes())
                     .joinToString("") { "%02x".format(it) }
                 check(lockHash.equals(expected, ignoreCase = true)) { "DSH dependency lock SHA-256 mismatch" }
+            }
+            check(ensureRuntimeExecutable(File(staging, "node/bin/node"))) {
+                "DSH Node executable permission could not be restored"
             }
             File(staging, ".installed").writeText(manifest.runtimeVersion)
             home.mkdirs()
@@ -131,7 +147,7 @@ class DshRuntimeProvisioner(private val context: Context) {
         File(target, "agent.cordis.yml").appendText(
             "\n- id: sai-voice-policy\n" +
                 "  name: '@sai/dsh-voice'\n" +
-                "  inject: [saiAndroid]\n" +
+                "  inject: [systemPrompt]\n" +
                 "  config: { promptOnly: true }\n",
             Charsets.UTF_8,
         )
@@ -169,3 +185,11 @@ class DshRuntimeProvisioner(private val context: Context) {
 
     companion object { const val MANIFEST_ASSET = "dsh-runtime/manifest.json" }
 }
+
+/** PowerShell 5 writes UTF-8 with a BOM by default; tolerate it in generated runtime manifests. */
+internal fun Json.decodeDshRuntimeManifest(content: String): DshRuntimeManifest =
+    decodeFromString(content.removePrefix("\uFEFF"))
+
+/** ZIP/tar creation on Windows can erase Unix execute bits from the bundled Node binary. */
+internal fun ensureRuntimeExecutable(file: File): Boolean =
+    file.isFile && (file.canExecute() || file.setExecutable(true, true)) && file.canExecute()

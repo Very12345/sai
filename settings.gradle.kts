@@ -19,7 +19,6 @@ rootProject.name = "PhoneAgent"
 include(
     ":app",
     ":voice-model-pack",
-    ":core:agent",
     ":core:network",
     ":core:provider",
     ":core:runtime",

@@ -71,6 +71,9 @@ data class SessionEntity(
     val providerId: String,
     val model: String,
     val reasoningConfigJson: String = "{\"mode\":\"AUTO\",\"effort\":null,\"budgetTokens\":null}",
+    val visionProviderId: String? = null,
+    val visionModelId: String? = null,
+    val visionSelectionSource: String = "AUTO",
     val state: String,
     val queueState: String = "READY",
     val progressText: String = "",
@@ -114,6 +117,28 @@ data class ExtensionEntity(
     val version: String = "",
     val sourceDigest: String = "",
     val previousManifestJson: String? = null,
+    val installState: String = "INSTALLED",
+    val profileId: String? = null,
+    val rollbackVersion: String? = null,
+)
+
+@Entity(
+    tableName = "terminal_tabs",
+    foreignKeys = [ForeignKey(
+        entity = WorkspaceEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["workspaceId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("workspaceId")],
+)
+data class TerminalTabEntity(
+    @PrimaryKey val id: String,
+    val workspaceId: String,
+    val title: String = "Terminal",
+    val cwd: String,
+    val state: String = "DISCONNECTED",
+    val lastActiveAt: Long = System.currentTimeMillis(),
 )
 
 @Entity(

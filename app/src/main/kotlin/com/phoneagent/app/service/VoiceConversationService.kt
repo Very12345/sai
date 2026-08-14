@@ -16,6 +16,8 @@ import com.phoneagent.app.StreamingAsrManager
 import com.phoneagent.app.LocalAsrManager
 import com.phoneagent.app.VoiceAudioCapture
 import com.phoneagent.app.VoiceConversationController
+import com.phoneagent.app.VoiceConversationKind
+import com.phoneagent.app.VoiceConversationState
 import com.phoneagent.app.VoiceConversationPhase
 import java.io.File
 import java.util.Locale
@@ -47,6 +49,7 @@ class VoiceConversationService : Service() {
     private var requestedModelId: String? = null
     private var playbackStartedAt = 0L
     private var playbackInterruptedByUser = false
+    private var conversationKind = VoiceConversationKind.CALL
     @Volatile private var dshTurnInFlight = false
     @Volatile private var latestHeardText = ""
 
@@ -96,6 +99,16 @@ class VoiceConversationService : Service() {
                 return START_STICKY
             }
             ACTION_STOP -> { stopConversation(); return START_NOT_STICKY }
+            ACTION_INPUT_CANCEL -> { stopConversation(); return START_NOT_STICKY }
+            ACTION_INPUT_TOGGLE -> {
+                if (VoiceConversationController.state.value.active && conversationKind == VoiceConversationKind.INPUT) {
+                    scope.launch { finishListening() }
+                } else {
+                    conversationKind = VoiceConversationKind.INPUT
+                    startInput()
+                }
+                return START_STICKY
+            }
             ACTION_MUTE -> VoiceConversationController.update { it.copy(muted = !it.muted) }
             ACTION_TOGGLE -> if (VoiceConversationController.state.value.active) stopConversation() else startConversation()
             else -> if (!VoiceConversationController.state.value.active) startConversation()
@@ -105,6 +118,7 @@ class VoiceConversationService : Service() {
     }
 
     private fun startConversation() {
+        conversationKind = VoiceConversationKind.CALL
         startForeground(NOTIFICATION_ID, notification())
         activeSessionId = requestedSessionId
         VoiceConversationController.update {
@@ -113,9 +127,25 @@ class VoiceConversationService : Service() {
                 phase = VoiceConversationPhase.SPEAKING,
                 transcript = "",
                 sessionId = activeSessionId,
+                kind = VoiceConversationKind.CALL,
             )
         }
         scope.launch { playGreeting() }
+    }
+
+    private fun startInput() {
+        startForeground(NOTIFICATION_ID, notification())
+        activeSessionId = requestedSessionId
+        VoiceConversationController.update {
+            VoiceConversationState(
+                active = true,
+                phase = VoiceConversationPhase.PREPARING,
+                sessionId = activeSessionId,
+                kind = VoiceConversationKind.INPUT,
+                resultSequence = it.resultSequence,
+            )
+        }
+        beginListening()
     }
 
     private fun playGreeting() {
@@ -210,12 +240,33 @@ class VoiceConversationService : Service() {
     }
 
     private suspend fun finishListening() {
-        if (!captureActive) return
+        if (!captureActive) {
+            if (conversationKind == VoiceConversationKind.INPUT && preparingListening) stopConversation()
+            return
+        }
         captureActive = false
         runCatching { streaming.finish() }
         val file = capture.stop(true) ?: return beginListening()
         VoiceConversationController.update { it.copy(phase = VoiceConversationPhase.RECOGNIZING) }
         val text = runCatching { finalAsr.transcribe(file) }.also { file.delete() }.getOrDefault("").trim()
+        if (conversationKind == VoiceConversationKind.INPUT) {
+            if (text.isBlank()) {
+                VoiceConversationController.update { it.copy(active = false, phase = VoiceConversationPhase.ERROR, transcript = "没有识别到有效语音") }
+            } else {
+                VoiceConversationController.update {
+                    it.copy(
+                        active = false,
+                        phase = VoiceConversationPhase.STOPPED,
+                        transcript = text,
+                        resultText = text,
+                        resultSequence = it.resultSequence + 1,
+                    )
+                }
+            }
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
         if (text.isBlank()) return beginListening()
         latestHeardText = text
         val turnId = UUID.randomUUID().toString()
@@ -320,14 +371,27 @@ class VoiceConversationService : Service() {
         captureActive = false
         capture.stop(false)
         tts?.stop()
-        VoiceConversationController.reset()
+        val previous = VoiceConversationController.state.value
+        VoiceConversationController.update {
+            VoiceConversationState(
+                kind = previous.kind,
+                resultText = previous.resultText,
+                resultSequence = previous.resultSequence,
+            )
+        }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     override fun onDestroy() {
         capture.stop(false); streaming.close(); finalAsr.close(); tts?.shutdown(); scope.cancel()
-        VoiceConversationController.reset()
+        VoiceConversationController.update { previous ->
+            VoiceConversationState(
+                kind = previous.kind,
+                resultText = previous.resultText,
+                resultSequence = previous.resultSequence,
+            )
+        }
         super.onDestroy()
     }
     override fun onBind(intent: Intent?): IBinder? = null
@@ -337,6 +401,8 @@ class VoiceConversationService : Service() {
         const val ACTION_STOP = "com.phoneagent.app.action.VOICE_STOP"
         const val ACTION_MUTE = "com.phoneagent.app.action.VOICE_MUTE"
         const val ACTION_SPEAK = "com.phoneagent.app.action.VOICE_SPEAK"
+        const val ACTION_INPUT_TOGGLE = "com.phoneagent.app.action.VOICE_INPUT_TOGGLE"
+        const val ACTION_INPUT_CANCEL = "com.phoneagent.app.action.VOICE_INPUT_CANCEL"
         const val EXTRA_SPEAK_TEXT = "com.phoneagent.app.extra.VOICE_SPEAK_TEXT"
         const val EXTRA_SESSION_ID = "com.phoneagent.app.extra.VOICE_SESSION_ID"
         const val EXTRA_WORKSPACE_ID = "com.phoneagent.app.extra.VOICE_WORKSPACE_ID"

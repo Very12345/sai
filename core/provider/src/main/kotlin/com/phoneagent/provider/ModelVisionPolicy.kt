@@ -9,6 +9,10 @@ object ModelVisionPolicy {
     )
 
     fun supportsImageInput(profile: ProviderProfile, modelId: String = profile.defaultModel): Boolean {
+        return supportsImageInput(modelId)
+    }
+
+    fun supportsImageInput(modelId: String): Boolean {
         val normalized = modelId.lowercase()
         return visionMarkers.any(normalized::contains)
     }

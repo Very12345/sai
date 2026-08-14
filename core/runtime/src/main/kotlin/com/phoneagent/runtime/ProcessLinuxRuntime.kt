@@ -26,7 +26,17 @@ class ProcessLinuxRuntime(
         if (!rootfs.resolve("bin/bash").exists()) {
             return RuntimeCapability(false, System.getProperty("os.arch") ?: "unknown", false, false, detail = "Debian rootfs is not installed")
         }
-        val result = run(RunRequest("printf '%s\\n' \"$(python3 --version 2>&1)\" \"$(git --version 2>&1)\"", "/home/phoneagent", timeoutMillis = 15_000))
+        val result = runCatching {
+            run(RunRequest("printf '%s\\n' \"$(python3 --version 2>&1)\" \"$(git --version 2>&1)\"", "/home/phoneagent", timeoutMillis = 15_000))
+        }.getOrElse { error ->
+            return RuntimeCapability(
+                available = false,
+                architecture = System.getProperty("os.arch") ?: "unknown",
+                rootfsReady = true,
+                prootReady = false,
+                detail = error.message ?: "Local Debian runtime probe failed",
+            )
+        }
         val lines = result.stdout.lines()
         return RuntimeCapability(
             available = result.exitCode == 0,
@@ -135,7 +145,13 @@ class ProcessLinuxRuntime(
     private fun process(request: RunRequest): ProcessBuilder {
         val guestEnvironment = request.environment.filterKeys { it !in SECRET_ENV_NAMES } +
             request.sensitiveEnvironment.filterKeys { it in SECRET_ENV_NAMES }
-        val command = commandBuilder.shell(request.command, request.workingDirectory, request.workspaceHostPath, guestEnvironment)
+        val command = commandBuilder.shell(
+            request.command,
+            request.workingDirectory,
+            request.workspaceHostPath,
+            guestEnvironment,
+            request.trustedBinds,
+        )
         val isolated = if (File("/system/bin/setsid").canExecute()) listOf("/system/bin/setsid") + command else command
         return ProcessBuilder(isolated).apply {
             environment().clear()

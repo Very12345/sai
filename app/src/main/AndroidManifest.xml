@@ -64,6 +64,10 @@
             android:exported="false"
             android:noHistory="true"
             android:theme="@style/Theme.PhoneAgent.Transparent" />
+        <activity
+            android:name=".ArtifactPreviewActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified" />
 
         <service
             android:name=".service.AgentForegroundService"

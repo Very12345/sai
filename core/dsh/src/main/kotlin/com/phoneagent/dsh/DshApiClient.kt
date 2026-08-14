@@ -74,7 +74,7 @@ class DshApiClient(
     private suspend fun call(method: String, payload: JsonObject, allowFailure: Boolean = false): JsonObject? =
         withContext(Dispatchers.IO) {
             val base = state().webUrl?.takeIf { state().phase == DshRuntimePhase.READY }
-                ?: error("DeepSeek Harness is not ready")
+                ?: error("sai Agent 尚未就绪")
             val rpcId = UUID.randomUUID().toString()
             val envelope = buildJsonObject {
                 put("type", "client-request")

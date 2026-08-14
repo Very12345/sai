@@ -216,6 +216,8 @@ data class ModelInfo(
     val displayName: String = id,
     val contextWindow: Int? = null,
     val reasoningCapabilities: ModelReasoningCapabilities? = null,
+    val inputModalities: List<String> = if (ModelVisionPolicy.supportsImageInput(id)) listOf("text", "image") else listOf("text"),
+    val capabilitySource: String = "provider-or-official-rule",
 )
 
 @Serializable

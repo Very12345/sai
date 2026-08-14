@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class VoiceConversationPhase { STOPPED, PREPARING, LISTENING, RECOGNIZING, THINKING, SPEAKING, ERROR }
+enum class VoiceConversationKind { INPUT, CALL }
 
 data class VoiceConversationState(
     val active: Boolean = false,
@@ -14,6 +15,9 @@ data class VoiceConversationState(
     val voiceTurnId: String? = null,
     val muted: Boolean = false,
     val sessionId: String? = null,
+    val kind: VoiceConversationKind = VoiceConversationKind.CALL,
+    val resultText: String = "",
+    val resultSequence: Long = 0,
 )
 
 /** Application-scoped truth shared by the Activity, notification and detached pet. */

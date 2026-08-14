@@ -22,8 +22,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         HookConfigEntity::class,
         DesktopPairingEntity::class,
         RuntimePackageEntity::class,
+        TerminalTabEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class PhoneAgentDatabase : RoomDatabase() {
@@ -37,7 +38,7 @@ abstract class PhoneAgentDatabase : RoomDatabase() {
                 context.applicationContext,
                 PhoneAgentDatabase::class.java,
                 "phoneagent.db",
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
         }
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -83,6 +84,19 @@ abstract class PhoneAgentDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE sessions ADD COLUMN reasoningConfigJson TEXT NOT NULL DEFAULT '{\"mode\":\"AUTO\",\"effort\":null,\"budgetTokens\":null}'")
                 // v3 did not record whether a title was manually renamed. Preserve every legacy title.
                 db.execSQL("UPDATE sessions SET titleSource = 'MANUAL', autoTitleState = 'COMPLETE'")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN visionProviderId TEXT")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN visionModelId TEXT")
+                db.execSQL("ALTER TABLE sessions ADD COLUMN visionSelectionSource TEXT NOT NULL DEFAULT 'AUTO'")
+                db.execSQL("ALTER TABLE extensions ADD COLUMN installState TEXT NOT NULL DEFAULT 'INSTALLED'")
+                db.execSQL("ALTER TABLE extensions ADD COLUMN profileId TEXT")
+                db.execSQL("ALTER TABLE extensions ADD COLUMN rollbackVersion TEXT")
+                db.execSQL("CREATE TABLE IF NOT EXISTS terminal_tabs (id TEXT NOT NULL, workspaceId TEXT NOT NULL, title TEXT NOT NULL, cwd TEXT NOT NULL, state TEXT NOT NULL, lastActiveAt INTEGER NOT NULL, PRIMARY KEY(id), FOREIGN KEY(workspaceId) REFERENCES workspaces(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_terminal_tabs_workspaceId ON terminal_tabs(workspaceId)")
             }
         }
     }
