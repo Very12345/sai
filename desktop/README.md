@@ -1,4 +1,4 @@
-# sai Desktop 0.2.0
+# sai Desktop 1.2.0 Preview 3
 
 The Windows companion is a Tauri 2 application for local-network project files
 and basic Agent conversations. It does not use a cloud relay and cannot approve

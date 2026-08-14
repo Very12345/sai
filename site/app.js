@@ -1,7 +1,7 @@
 const pathParts = location.pathname.split('/').filter(Boolean);
 const repo = location.hostname.endsWith('github.io') && pathParts[0]
   ? `${location.hostname.split('.')[0]}/${pathParts[0]}`
-  : 'zongt-yu/sai';
+  : 'Very12345/sai';
 const repoUrl = `https://github.com/${repo}`;
 document.querySelectorAll('[data-repo]').forEach(a => a.href = repoUrl);
 document.querySelectorAll('[data-security]').forEach(a => a.href = `${repoUrl}/blob/main/SECURITY.md`);

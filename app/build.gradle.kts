@@ -12,8 +12,8 @@ android {
         applicationId = "com.phoneagent.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 12_001
-        versionName = "1.2.0-dsh-preview.2"
+        versionCode = 12_002
+        versionName = "1.2.0-dsh-preview.3"
         val githubRepository = providers.gradleProperty("saiGithubRepository").orNull.orEmpty()
         buildConfigField("String", "GITHUB_REPOSITORY", "\"$githubRepository\"")
 
