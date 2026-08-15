@@ -14,6 +14,25 @@ and context-compaction design were reviewed against DeepSeek-Reasonix `main-v2` 
 historical Kotlin implementation and retains this attribution for the earlier design. New interactive
 tasks run through DeepSeek Harness rather than that implementation.
 
+## Optional DeepSeek Harness community presets
+
+sai includes two removable, non-default DSH presets. Both are installed from
+audited, pinned source snapshots and remain clearly marked experimental in the
+application.
+
+- `Anchored Standard` from
+  [`xiaobright/dsh-anchored-standard`](https://github.com/xiaobright/dsh-anchored-standard),
+  commit `95b98af6552d8e6176f80ac1b17b9d1186bfebf7`, MIT License. Portions of its
+  Standard composition are adapted from DeepSeek Harness and retain the
+  upstream notice.
+- `Router Standard` from
+  [`yjh051108/dsh-router-standard`](https://github.com/yjh051108/dsh-router-standard),
+  commit `d4655d5874883c6994721236f0ece97499570eac`, MIT License.
+
+The separate `dsh-super-injector` component from `dsh-routing-suite` is not
+embedded: arbitrary runtime injection and route mutation would bypass sai's
+reviewed installation, approval and rollback boundary.
+
 ## sherpa-onnx speech models
 
 Local speech recognition uses sherpa-onnx and models shipped in the independently uninstallable

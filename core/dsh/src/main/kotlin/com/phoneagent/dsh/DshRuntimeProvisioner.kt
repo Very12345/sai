@@ -12,8 +12,28 @@ import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 
+data class BundledDshPresetState(
+    val id: String,
+    val name: String,
+    val version: String,
+    val description: String,
+    val sourceUrl: String,
+    val sourceCommit: String,
+    val installed: Boolean,
+)
+
+private data class BundledDshPresetSpec(
+    val id: String,
+    val name: String,
+    val version: String,
+    val description: String,
+    val sourceUrl: String,
+    val sourceCommit: String,
+)
+
 class DshRuntimeProvisioner(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val presetPreferences = context.getSharedPreferences("sai-dsh-presets", Context.MODE_PRIVATE)
     val root = File(context.filesDir, "dsh")
     val current = File(root, "runtime/current")
     private val previous = File(root, "runtime/previous")
@@ -141,21 +161,89 @@ class DshRuntimeProvisioner(private val context: Context) {
         if (!standard.isDirectory) return
         val target = File(home, ".agent-presets/sai-voice")
         val marker = File(target, ".sai-version")
-        if (marker.readTextOrNull() == manifest.runtimeVersion) return
-        if (target.exists()) target.deleteRecursively()
-        check(standard.copyRecursively(target, overwrite = true)) { "Unable to provision sai voice preset" }
-        File(target, "agent.cordis.yml").appendText(
-            "\n- id: sai-voice-policy\n" +
-                "  name: '@sai/dsh-voice'\n" +
-                "  inject: [systemPrompt]\n" +
-                "  config: { promptOnly: true }\n",
-            Charsets.UTF_8,
+        if (marker.readTextOrNull() != manifest.runtimeVersion) {
+            if (target.exists()) target.deleteRecursively()
+            check(standard.copyRecursively(target, overwrite = true)) { "Unable to provision sai voice preset" }
+            File(target, "agent.cordis.yml").appendText(
+                "\n- id: sai-voice-policy\n" +
+                    "  name: '@sai/dsh-voice'\n" +
+                    "  inject: [systemPrompt]\n" +
+                    "  config: { promptOnly: true }\n",
+                Charsets.UTF_8,
+            )
+            File(target, "preset.yml").writeText(
+                "name: sai 语音通话\ndescription: 连续倾听、主动 speak 与插话转向。\n",
+                Charsets.UTF_8,
+            )
+            marker.writeText(manifest.runtimeVersion)
+        }
+        BUNDLED_PRESETS.filter(::shouldInstallBundledPreset).forEach(::installBundledPreset)
+    }
+
+    fun bundledPresetStates(): List<BundledDshPresetState> = BUNDLED_PRESETS.map { spec ->
+        BundledDshPresetState(
+            id = spec.id,
+            name = spec.name,
+            version = spec.version,
+            description = spec.description,
+            sourceUrl = spec.sourceUrl,
+            sourceCommit = spec.sourceCommit,
+            installed = isBundledPresetInstalled(spec),
         )
-        File(target, "preset.yml").writeText(
-            "name: sai 语音通话\ndescription: 连续倾听、主动 speak 与插话转向。\n",
-            Charsets.UTF_8,
-        )
-        marker.writeText(manifest.runtimeVersion)
+    }
+
+    fun setBundledPresetInstalled(id: String, installed: Boolean) {
+        val spec = BUNDLED_PRESETS.firstOrNull { it.id == id } ?: error("Unknown bundled DSH preset: $id")
+        presetPreferences.edit().putBoolean(presetPreferenceKey(spec), installed).commit()
+        if (installed) installBundledPreset(spec) else {
+            val target = bundledPresetDirectory(spec)
+            check(target.canonicalFile.toPath().startsWith(File(home, ".agent-presets").canonicalFile.toPath())) {
+                "Bundled preset path escaped DSH home"
+            }
+            if (target.exists()) check(target.deleteRecursively()) { "Unable to remove ${spec.name}" }
+        }
+    }
+
+    private fun shouldInstallBundledPreset(spec: BundledDshPresetSpec): Boolean =
+        presetPreferences.getBoolean(presetPreferenceKey(spec), true)
+
+    private fun presetPreferenceKey(spec: BundledDshPresetSpec) = "installed:${spec.id}"
+
+    private fun bundledPresetDirectory(spec: BundledDshPresetSpec) = File(home, ".agent-presets/${spec.id}")
+
+    private fun isBundledPresetInstalled(spec: BundledDshPresetSpec): Boolean {
+        val target = bundledPresetDirectory(spec)
+        return target.isDirectory && File(target, "agent.cordis.yml").isFile &&
+            File(target, ".sai-bundled-version").readTextOrNull() == bundledPresetMarker(spec)
+    }
+
+    private fun bundledPresetMarker(spec: BundledDshPresetSpec) =
+        "${spec.version}:${spec.sourceCommit}:${manifest.runtimeVersion}"
+
+    private fun installBundledPreset(spec: BundledDshPresetSpec) {
+        if (isBundledPresetInstalled(spec)) return
+        val root = File(home, ".agent-presets").apply { mkdirs() }.canonicalFile
+        val target = bundledPresetDirectory(spec).canonicalFile
+        check(target.toPath().startsWith(root.toPath())) { "Bundled preset path escaped DSH home" }
+        val staging = File(root, ".${spec.id}.sai-staging")
+        if (staging.exists()) staging.deleteRecursively()
+        copyAssetTree("dsh-presets/${spec.id}", staging)
+        File(staging, ".sai-bundled-version").writeText(bundledPresetMarker(spec), Charsets.UTF_8)
+        if (target.exists()) check(target.deleteRecursively()) { "Unable to replace ${spec.name}" }
+        check(staging.renameTo(target) || staging.copyRecursively(target, overwrite = true).also { staging.deleteRecursively() }) {
+            "Unable to install ${spec.name}"
+        }
+    }
+
+    private fun copyAssetTree(assetPath: String, target: File) {
+        val children = context.assets.list(assetPath).orEmpty()
+        if (children.isEmpty()) {
+            target.parentFile?.mkdirs()
+            context.assets.open(assetPath).use { input -> target.outputStream().use(input::copyTo) }
+            return
+        }
+        target.mkdirs()
+        children.forEach { child -> copyAssetTree("$assetPath/$child", File(target, child)) }
     }
 
     private fun extractEntry(root: File, entry: TarArchiveEntry, tar: TarArchiveInputStream) {
@@ -183,7 +271,28 @@ class DshRuntimeProvisioner(private val context: Context) {
 
     private fun File.readTextOrNull(): String? = runCatching { readText().trim() }.getOrNull()
 
-    companion object { const val MANIFEST_ASSET = "dsh-runtime/manifest.json" }
+    companion object {
+        const val MANIFEST_ASSET = "dsh-runtime/manifest.json"
+
+        private val BUNDLED_PRESETS = listOf(
+            BundledDshPresetSpec(
+                id = "anchored-standard",
+                name = "Anchored Standard",
+                version = "0.1.0",
+                description = "Minimal 工具面锚定首轮，随后恢复完整 Standard；偏维护、修复与 DeepSeek Pro。",
+                sourceUrl = "https://github.com/xiaobright/dsh-anchored-standard",
+                sourceCommit = "95b98af6552d8e6176f80ac1b17b9d1186bfebf7",
+            ),
+            BundledDshPresetSpec(
+                id = "router-standard",
+                name = "Router Standard",
+                version = "0.1.1",
+                description = "按任务选择 spec/react/weak 行为带，并为 Flash 使用专属弱域提示。",
+                sourceUrl = "https://github.com/yjh051108/dsh-router-standard",
+                sourceCommit = "d4655d5874883c6994721236f0ece97499570eac",
+            ),
+        )
+    }
 }
 
 /** PowerShell 5 writes UTF-8 with a BOM by default; tolerate it in generated runtime manifests. */

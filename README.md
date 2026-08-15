@@ -15,6 +15,10 @@ model API credentials.
 - First-party capabilities live in `dsh-plugins/` as separately versioned DSH bundles: UI, Android,
   voice, models, request guard, GitHub, market, pet, artifacts and legacy import. The public ecosystem
   topic is exactly `dsh-plugin`.
+- Two pinned community optimization presets are preinstalled but never forced on a session:
+  `Anchored Standard` for Minimal-aligned first-turn anchoring and `Router Standard` for
+  task-aware spec/react/weak routing (including a Flash-specific weak persona). Both are removable
+  and reinstallable from the extension center; the suite's unrestricted runtime injector is not bundled.
 - The DSH local origin is protected by a random HttpOnly session cookie, authenticated health checks
   and an allowlisted Android bridge; no general JavaScript interface is exposed.
 

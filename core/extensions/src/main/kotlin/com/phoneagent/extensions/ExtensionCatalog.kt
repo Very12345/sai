@@ -134,7 +134,8 @@ class ExtensionCatalogClient(
         val builtIns = builtInRecommendations()
         val remote = (dsh + skills + mcp).distinctBy { "${it.kind}:${it.id}" }
             .sortedWith(compareByDescending<CatalogExtension> { it.installs != null }.thenByDescending { it.installs ?: 0L })
-        (remote + builtIns).distinctBy { "${it.kind}:${it.id}" }
+        val pinned = builtIns.filter { it.installUrl?.startsWith("sai-bundled-preset:") == true }
+        (pinned + remote + builtIns).distinctBy { "${it.kind}:${it.id}" }
     }
 
     private fun searchDshPlugins(query: String, limit: Int): List<CatalogExtension> {
@@ -215,6 +216,30 @@ class ExtensionCatalogClient(
     }.getOrDefault(false)
 
     private fun builtInRecommendations(): List<CatalogExtension> = listOf(
+        CatalogExtension(
+            id = "sai:preset:anchored-standard",
+            name = "Anchored Standard",
+            description = "首轮使用 Minimal 的真实工具面完成轨迹锚定，随后恢复完整 Standard。偏向 DeepSeek Pro 的维护、修复与长程代码任务。",
+            version = "0.1.0",
+            source = "sai 预装 · xiaobright/dsh-anchored-standard",
+            kind = ExtensionKind.PLUGIN,
+            installUrl = "sai-bundled-preset:anchored-standard",
+            homepage = "https://github.com/xiaobright/dsh-anchored-standard",
+            installs = Long.MAX_VALUE,
+            auditSummary = "MIT · 固定提交 95b98af · 实验性 Preset · 默认预装但不自动选中",
+        ),
+        CatalogExtension(
+            id = "sai:preset:router-standard",
+            name = "Router Standard",
+            description = "把构建任务路由到 react、修复任务路由到 spec，模糊任务进入 weak；Flash 使用单独的 classify/continue 提示。",
+            version = "0.1.1",
+            source = "sai 预装 · yjh051108/dsh-router-standard",
+            kind = ExtensionKind.PLUGIN,
+            installUrl = "sai-bundled-preset:router-standard",
+            homepage = "https://github.com/yjh051108/dsh-router-standard",
+            installs = Long.MAX_VALUE - 1,
+            auditSummary = "MIT · 固定提交 d4655d5 · 不包含高权限 super-injector",
+        ),
         CatalogExtension(
             id = "modelcontextprotocol/servers/filesystem",
             name = "Filesystem MCP",

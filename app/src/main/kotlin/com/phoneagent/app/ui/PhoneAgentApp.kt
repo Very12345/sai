@@ -3312,6 +3312,51 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                 }
                 item {
                     Text(
+                        "预装的 DeepSeek 优化 Preset",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                items(state.bundledDshPresets, key = { "preset:${it.id}" }) { preset ->
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(preset.name, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        "DSH Preset · ${preset.version} · 实验性",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                                FilterChip(
+                                    selected = preset.installed,
+                                    onClick = { viewModel.toggleBundledDshPreset(preset) },
+                                    label = { Text(if (preset.installed) "已安装" else "已卸载") },
+                                )
+                            }
+                            Text(preset.description, style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                preset.sourceUrl,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "固定提交 ${preset.sourceCommit.take(8)} · 不会自动改写现有会话模式",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            TextButton(onClick = { viewModel.toggleBundledDshPreset(preset) }) {
+                                Text(if (preset.installed) "卸载 Preset" else "重新安装")
+                            }
+                        }
+                    }
+                }
+                item {
+                    Text(
                         "用户安装的扩展",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -3383,7 +3428,13 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                                 }
                                 if (extension.description.isNotBlank()) Text(extension.description, maxLines = 3, overflow = TextOverflow.Ellipsis)
                                 Text(
-                                    listOfNotNull(extension.source, extension.version.takeIf(String::isNotBlank), extension.installs?.let { "$it 次安装" }).joinToString(" · "),
+                                    listOfNotNull(
+                                        extension.source,
+                                        extension.version.takeIf(String::isNotBlank),
+                                        extension.installs
+                                            ?.takeUnless { extension.source.startsWith("sai 预装") }
+                                            ?.let { "$it 次安装" },
+                                    ).joinToString(" · "),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

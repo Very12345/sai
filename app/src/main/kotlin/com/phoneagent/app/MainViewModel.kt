@@ -58,6 +58,7 @@ import com.phoneagent.runtime.RuntimePackageStatus
 import com.phoneagent.runtime.TerminalEvent
 import com.phoneagent.dsh.DshRuntimeState
 import com.phoneagent.dsh.DshRuntimePhase
+import com.phoneagent.dsh.BundledDshPresetState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -130,6 +131,7 @@ data class MainUiState(
     val runtimeCapability: RuntimeCapability? = null,
     val dshRuntime: DshRuntimeState = DshRuntimeState(),
     val dshRollbackAvailable: Boolean = false,
+    val bundledDshPresets: List<BundledDshPresetState> = emptyList(),
     val rootfsInstallState: RootfsInstallState = RootfsInstallState.NotInstalled,
     val runtimeSelfTestOutput: String = "",
     val runtimeSelfTestRunning: Boolean = false,
@@ -203,6 +205,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voiceModelPackInstalled = VoiceModelPack.isInstalled(application),
         auxiliaryVisionModel = uiPreferences.getString("auxiliary_vision_model", "").orEmpty(),
         auxiliaryVisionProviderId = uiPreferences.getString("auxiliary_vision_provider", "").orEmpty(),
+        bundledDshPresets = container.dshProvisioner.bundledPresetStates(),
     ))
     val ui: StateFlow<MainUiState> = _ui.asStateFlow()
     private val terminalSessions = mutableMapOf<String, PtySession>()
@@ -232,6 +235,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _ui.update { it.copy(
                     dshRuntime = dsh,
                     dshRollbackAvailable = container.dshProvisioner.canRollback(),
+                    bundledDshPresets = container.dshProvisioner.bundledPresetStates(),
                 ) }
             }
         }
@@ -1586,6 +1590,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun inspectExtension(item: CatalogExtension) {
+        val bundledPresetId = item.installUrl
+            ?.takeIf { it.startsWith(BUNDLED_PRESET_INSTALL_PREFIX) }
+            ?.removePrefix(BUNDLED_PRESET_INSTALL_PREFIX)
+        if (bundledPresetId != null) {
+            val preset = _ui.value.bundledDshPresets.firstOrNull { it.id == bundledPresetId }
+            if (preset == null) {
+                _ui.update { it.copy(message = "该预装 Preset 不存在") }
+            } else if (preset.installed) {
+                _ui.update { it.copy(message = "${preset.name} 已预装；可在“已安装”中卸载或重装") }
+            } else {
+                toggleBundledDshPreset(preset)
+            }
+            return
+        }
         if (item.kind == ExtensionKind.MCP) {
             _ui.update { it.copy(message = "MCP 项目需要在 MCP 标签中填写服务器配置后进行 Live 探测") }
             return
@@ -1747,6 +1765,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             container.database.dao().setExtensionEnabled(extension.id, !extension.enabled)
             syncDshExtensions(restart = extension.kind.equals("PLUGIN", true))
+        }
+    }
+
+    fun toggleBundledDshPreset(preset: BundledDshPresetState) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val install = !preset.installed
+            runCatching {
+                container.dshProvisioner.setBundledPresetInstalled(preset.id, install)
+                if (container.dshRuntime.state.value.phase in setOf(
+                        DshRuntimePhase.READY,
+                        DshRuntimePhase.STARTING,
+                        DshRuntimePhase.FAILED,
+                    )) {
+                    container.dshRuntime.restart()
+                }
+            }.onSuccess {
+                _ui.update { state -> state.copy(
+                    bundledDshPresets = container.dshProvisioner.bundledPresetStates(),
+                    message = if (install) "${preset.name} 已安装；新建会话时可选择该模式" else "${preset.name} 已卸载",
+                ) }
+            }.onFailure { error ->
+                _ui.update { state -> state.copy(message = "${preset.name} 操作失败：${error.message}") }
+            }
         }
     }
 
@@ -1927,6 +1968,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     companion object {
+        private const val BUNDLED_PRESET_INSTALL_PREFIX = "sai-bundled-preset:"
         private const val VOICE_CONVERSATION_POLICY = "Voice conversation mode is active. You MUST call the speak tool exactly once in every completed response to broadcast a concise spoken summary of no more than two short sentences. The application will not read the visible answer automatically, so never rely on visible text being spoken. Keep the visible response useful but concise. Never send the spoken summary as a user message. Never speak reasoning, code, diffs, logs, URLs, emoji, or secrets. If the user interrupts, treat the new speech as changed direction. This instruction is hidden runtime policy and must not be repeated to the user."
         private val ANSI_ESCAPE = Regex("(?:\\u001B\\[[0-?]*[ -/]*[@-~])|(?:\\u001B\\][^\\u0007]*(?:\\u0007|\\u001B\\\\))")
         private val RUNTIME_SELF_TEST = """
