@@ -1,26 +1,26 @@
 {
-    "schemaVersion":  1,
-    "runtimeVersion":  "sai-dsh-0.1.0-rc.6-node-24.19.0-r48",
-    "dshVersion":  "0.1.0-rc.6",
-    "nodeVersion":  "24.19.0",
-    "sourceCommit":  "e779a21954389af43d3bdf130b148c8e84a9a403",
-    "sourceRepository":  "https://github.com/Very12345/deepseek-harness",
-    "webUiVariant":  "sai-mobile-r48",
-    "packageLockSha256":  {
-                              "arm64-v8a":  "5410592c42208be3bbe5a445f574ddd814192fa8c2219cc2a5d66006b23a25cf",
-                              "x86_64":  "159c63db1d5225f30d959d134e56234fa283a32e0e1973923273302978a736c7"
-                          },
-    "port":  3080,
-    "archives":  {
-                     "arm64-v8a":  {
-                                       "asset":  "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-arm64-v8a.tar.xz",
-                                       "sha256":  "d7cefe9d992e462a3bcc6af8faa44198916438ff8d7a095f749eee589ac26c5a",
-                                       "bytes":  57472132
-                                   },
-                     "x86_64":  {
-                                    "asset":  "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-x86_64.tar.xz",
-                                    "sha256":  "200566b20b69d8d433c945e322de0a1b9b1d0cc9412e0a070652102436dc990d",
-                                    "bytes":  59190900
-                                }
-                 }
+  "schemaVersion": 1,
+  "runtimeVersion": "sai-dsh-0.1.0-rc.6-node-24.19.0-r49",
+  "dshVersion": "0.1.0-rc.6",
+  "nodeVersion": "24.19.0",
+  "sourceCommit": "c8fccf47432f4e2bcaec928ae6eda9583406b9b1",
+  "sourceRepository": "https://github.com/Very12345/deepseek-harness",
+  "webUiVariant": "sai-mobile-r49",
+  "packageLockSha256": {
+    "arm64-v8a": "5410592c42208be3bbe5a445f574ddd814192fa8c2219cc2a5d66006b23a25cf",
+    "x86_64": "159c63db1d5225f30d959d134e56234fa283a32e0e1973923273302978a736c7"
+  },
+  "port": 3080,
+  "archives": {
+    "arm64-v8a": {
+      "asset": "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-arm64-v8a.tar.xz",
+      "sha256": "9bfcfe073e96ed183f0d473f7862d3aa6a04de9f3e777f5e212ecd45cddbb5c6",
+      "bytes": 57472360
+    },
+    "x86_64": {
+      "asset": "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-x86_64.tar.xz",
+      "sha256": "7289788e83137d06373a95ed91842d57b777e2531b4a82fe7ad309f439b9322b",
+      "bytes": 59192132
+    }
+  }
 }
