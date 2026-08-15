@@ -1,26 +1,26 @@
 {
   "schemaVersion": 1,
-  "runtimeVersion": "sai-dsh-0.1.0-rc.6-node-24.19.0-r50",
+  "runtimeVersion": "sai-dsh-0.1.0-rc.6-node-24.19.0-r51",
   "dshVersion": "0.1.0-rc.6",
   "nodeVersion": "24.19.0",
-  "sourceCommit": "7fc1066aa944cf020b41cca3b6dc94decfeee8ad",
+  "sourceCommit": "de944f41071912c5c9bf00eb3ad11b581eb5136b",
   "sourceRepository": "https://github.com/Very12345/deepseek-harness",
-  "webUiVariant": "sai-mobile-r50",
+  "webUiVariant": "sai-mobile-r51",
   "packageLockSha256": {
-    "x86_64": "040fa0fa351d96f39982d470d41481ec3227ac5d654ea35ba248b78340ccf52b",
-    "arm64-v8a": "bcc5b93901d7181c305c39b8a8415f829f231de6b3da78bbc80a4da522ecf06e"
+    "x86_64": "e757721757c1e15b89cab65e3f7cf8d63f5e63033aef1abeebe5afbacdbddec8",
+    "arm64-v8a": "e8a11896df7d0bcf64fbe64dc6ce3e7df3b6618999d2d13ccb55beefc05fea71"
   },
   "port": 3080,
   "archives": {
     "x86_64": {
       "asset": "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-x86_64.tar.xz",
-      "sha256": "6927da3eda5fdb88206addd3ac62acaaf4adff16adee5b7ce2938b2f126e0124",
-      "bytes": 59189892
+      "sha256": "be52d31332d0f0fcccc6a1c3378782bf6cb57becbec3c9460e7f4c7ba939697c",
+      "bytes": 59188084
     },
     "arm64-v8a": {
       "asset": "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-arm64-v8a.tar.xz",
-      "sha256": "49f87cad3c46e91cc8f5d3a680335c99025882de1ecc2b33031b38cd1bc0cbe2",
-      "bytes": 57470624
+      "sha256": "799b8af77bee805295dd2987393b0ac81ba30e39480cdea331e5b90c935703df",
+      "bytes": 57482360
     }
   }
 }

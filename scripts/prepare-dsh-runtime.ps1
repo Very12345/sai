@@ -2,7 +2,7 @@ param(
     [string]$CacheRoot = 'D:\Code\sai-dsh-runtime',
     [string]$NodeVersion = '24.19.0',
     [string]$DshVersion = '0.1.0-rc.6',
-    [int]$RuntimeRevision = 50,
+    [int]$RuntimeRevision = 51,
     [string]$DshForkRoot = 'D:\Code\deepseek-harness',
     [switch]$ReuseInstalledStages
 )

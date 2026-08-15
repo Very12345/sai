@@ -47,6 +47,7 @@ data class CatalogExtension(
     val homepage: String? = null,
     val installs: Long? = null,
     val auditSummary: String? = null,
+    val category: String? = null,
 )
 
 @Serializable
@@ -127,7 +128,10 @@ class ExtensionCatalogClient(
         val perKind = (limit / 2).coerceAtLeast(30)
         val skills = runCatching { publicSkills("trending", perKind) }.getOrDefault(emptyList())
         val mcp = runCatching { searchMcp("", perKind) }.getOrDefault(emptyList())
-        val dsh = runCatching { curatedDshPlugins("", perKind) }.getOrDefault(emptyList())
+        // The curated README is small and already downloaded as one document.
+        // Keep its full category tree locally so filtering never triggers a
+        // GitHub request per chip or hides entries beyond an arbitrary top 30.
+        val dsh = runCatching { curatedDshPlugins("", 250) }.getOrDefault(emptyList())
         val builtIns = builtInRecommendations()
         val remote = (dsh + skills + mcp).distinctBy { "${it.kind}:${it.id}" }
             .sortedWith(compareByDescending<CatalogExtension> { it.installs != null }.thenByDescending { it.installs ?: 0L })
@@ -153,7 +157,7 @@ class ExtensionCatalogClient(
             .filter { item ->
                 query.isBlank() || query.lowercase() in setOf("dsh-plugin", "dsh-puglin") ||
                     item.name.contains(query, true) || item.description.contains(query, true) ||
-                    item.version.contains(query, true)
+                    item.category.orEmpty().contains(query, true)
             }
             .take(limit)
     }
@@ -184,7 +188,7 @@ class ExtensionCatalogClient(
                 },
                 name = packageHint.ifBlank { repository },
                 description = match.groupValues[6].trim(),
-                version = category,
+                category = category,
                 source = if (cached) "awesome-dsh-plugin · 本地缓存" else "awesome-dsh-plugin · 精选目录",
                 kind = ExtensionKind.PLUGIN,
                 installUrl = "https://github.com/$fullName.git",

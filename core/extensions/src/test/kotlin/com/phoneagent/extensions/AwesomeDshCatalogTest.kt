@@ -20,7 +20,8 @@ class AwesomeDshCatalogTest {
         assertEquals("dsh:wx-yss/dsh-message-rail", items[0].id)
         assertEquals("dsh:TZHR-invest/dsh-plugins#packages/dsh-mobile-ui", items[1].id)
         assertEquals("dsh-mobile-ui", items[1].name)
-        assertEquals("UI Enhancements", items[1].version)
+        assertEquals("UI Enhancements", items[1].category)
+        assertEquals("", items[1].version)
         assertTrue(items.all { it.source.contains("awesome-dsh-plugin") })
     }
 
