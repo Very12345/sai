@@ -213,6 +213,8 @@ import com.phoneagent.agent.ApprovalDecision
 import com.phoneagent.agent.ToolCapability
 import com.phoneagent.agent.TaskQueueState
 import com.phoneagent.app.MainSection
+import com.phoneagent.app.AppUpdatePhase
+import com.phoneagent.app.BuildConfig
 import com.phoneagent.app.R
 import com.phoneagent.app.MainUiState
 import com.phoneagent.app.MainViewModel
@@ -3409,7 +3411,7 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                 ) {
                     Text(state.extensionFeedTitle, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     if (state.extensionQuery.isBlank()) Text(
-                        "GitHub 实时搜索 · skills.sh 热榜 · 失败时使用缓存",
+                        "awesome-dsh-plugin 人工维护目录 · skills.sh 热榜 · 失败时使用缓存",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -3825,6 +3827,7 @@ private fun SettingsHub(
         SettingsCategoryEntry("runtime", "本地开发环境", "Debian、Git、Python 与可选工具链", Icons.Default.Terminal),
         SettingsCategoryEntry("files", "文件与电脑连接", "外部文件授权、桌面配对和诊断", Icons.Default.Folder),
         SettingsCategoryEntry("accounts", "账户", "GitHub 登录与请求限额", Icons.Default.AccountCircle),
+        SettingsCategoryEntry("about", "关于与更新", "GitHub Release 自动检查、安全下载与安装", Icons.Default.CloudDownload),
     )
     val details = listOf(
         SettingsDetailEntry("appearance/theme", "appearance", "软件主题", "全局配色和显示风格", Icons.Default.Palette),
@@ -3840,6 +3843,7 @@ private fun SettingsHub(
         SettingsDetailEntry("files/desktop", "files", "电脑连接", "局域网扫码配对", Icons.Default.Devices),
         SettingsDetailEntry("files/diagnostics", "files", "诊断与验收", "Agent 全链路测试", Icons.Default.CheckCircle),
         SettingsDetailEntry("accounts/github", "accounts", "GitHub", "gh 登录、状态与限额", Icons.Default.AccountCircle),
+        SettingsDetailEntry("about/update", "about", "应用更新", "检查、下载、校验并安装 GitHub Release", Icons.Default.CloudDownload),
     )
     if (page == null && detailPage == null) {
         LazyColumn(
@@ -4084,6 +4088,73 @@ private fun SettingsScreen(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        if (section == "about/update") {
+        item { SettingsSectionTitle(Icons.Default.CloudDownload, "应用更新", "通过 GitHub Release 检查、校验并更新 sai") }
+        item {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("sai ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                state.appUpdate.message ?: "每天自动检查一次，也可以立即手动检查",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (state.appUpdate.phase == AppUpdatePhase.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (state.appUpdate.phase == AppUpdatePhase.CHECKING) {
+                            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                    state.appUpdate.latestVersion?.takeIf { it != BuildConfig.VERSION_NAME }?.let { latest ->
+                        Text("可用版本：$latest", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                    if (state.appUpdate.phase == AppUpdatePhase.DOWNLOADING) {
+                        val total = state.appUpdate.totalBytes
+                        val copied = state.appUpdate.downloadedBytes
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { if (total > 0) (copied.toFloat() / total).coerceIn(0f, 1f) else 0f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            if (total > 0) "${formatBytes(copied)} / ${formatBytes(total)}" else "已下载 ${formatBytes(copied)}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    when (state.appUpdate.phase) {
+                        AppUpdatePhase.AVAILABLE, AppUpdatePhase.ERROR -> Button(
+                            onClick = viewModel::downloadAppUpdate,
+                            enabled = state.appUpdate.latestVersion != null,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("下载并校验更新") }
+                        AppUpdatePhase.READY -> Button(
+                            onClick = viewModel::installDownloadedAppUpdate,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("打开系统安装器") }
+                        else -> Unit
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.checkForAppUpdate() },
+                        enabled = state.appUpdate.phase !in setOf(AppUpdatePhase.CHECKING, AppUpdatePhase.DOWNLOADING),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("立即检查更新") }
+                    state.appUpdate.releaseUrl?.takeIf(String::isNotBlank)?.let { url ->
+                        TextButton(
+                            onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Icon(Icons.Default.OpenInNew, null); Spacer(Modifier.width(6.dp)); Text("查看 GitHub Release") }
+                    }
+                    Text(
+                        "下载后必须同时通过 SHA-256 和当前应用签名校验。Android 仍会显示系统安装确认，sai 不会静默安装。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        }
         if (section == "models/providers") {
         item { SettingsSectionTitle(Icons.Default.Hub, "模型与推理", "连接服务商、选择在线模型并控制思考强度") }
         item {

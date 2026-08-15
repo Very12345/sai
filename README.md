@@ -4,7 +4,7 @@ sai is a GPLv3 Android coding agent designed around a local workspace. Its name 
 a Debian/PRoot-compatible runtime, explicit tool approvals, and bring-your-own
 model API credentials.
 
-## Current implementation (1.2.0 DSH preview 3)
+## Current implementation (1.2.0 DSH preview 6)
 
 - Official DeepSeek Harness is the sole interactive Agent engine. The APK starts pinned DSH 0.1.0-rc.6
   on offline Node 24.19.0 inside app-private Debian/PRoot and embeds its authenticated Web client in
@@ -13,8 +13,9 @@ model API credentials.
   provider references through an Android Keystore credential plugin, and the old Kotlin loop no longer
   receives main UI, voice, desktop or diagnostic tasks.
 - First-party capabilities live in `dsh-plugins/` as separately versioned DSH bundles: UI, Android,
-  voice, models, request guard, GitHub, market, pet, artifacts and legacy import. The public ecosystem
-  topic is exactly `dsh-plugin`.
+  voice, models, request guard, GitHub, market, pet, artifacts and legacy import. Third-party plugin
+  discovery reads the maintained [`awesome-dsh-plugin`](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
+  catalog, while sai still performs its own bundle, path, lifecycle-script and permission preflight.
 - Two pinned community optimization presets are preinstalled but never forced on a session:
   `Anchored Standard` for Minimal-aligned first-turn anchoring and `Router Standard` for
   task-aware spec/react/weak routing (including a Flash-specific weak persona). Both are removable
@@ -71,7 +72,7 @@ model API credentials.
 The provider harness, GUI, persistence, approval system, native PRoot runtime,
 PTY bridge and rootfs installer build together as an ARM64 or x86_64 APK.
 Native artifacts can be reproduced with the pinned staging or from-source
-workflows documented in [native/README.md](native/README.md). The 1.2.0 preview 3 ARM64
+workflows documented in [native/README.md](native/README.md). The 1.2.0 preview 6 ARM64
 build is intended for in-place validation on a vivo X200s-class device without clearing app data. It
 includes the compact two-row composer, canvas-style PTY terminal, single-instance
 task pet, settings search, and full application themes.
@@ -96,6 +97,11 @@ installer, creates the optional `sai-voice-pack-zh-en.apk`, generates
 in one Release. The two ABI-specific DSH Runtime Packs are released alongside a
 detached Ed25519 signature so the runtime and the Android shell have independent
 update artifacts.
+
+Starting with preview 6, the Android app checks GitHub Releases once per day and
+can download the correct ABI APK itself. It verifies `SHA256SUMS.txt` and requires
+the APK signing certificate to match the currently installed sai before opening
+Android's system installer. Updates are never installed silently.
 
 ## Build
 

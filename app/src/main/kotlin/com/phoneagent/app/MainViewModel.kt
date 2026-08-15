@@ -139,6 +139,7 @@ data class MainUiState(
     val githubTokenInput: String = "",
     val githubCliBusy: Boolean = false,
     val githubDeviceCode: String? = null,
+    val appUpdate: AppUpdateState = AppUpdateState(),
     val provider: ProviderProfile = ProviderPresets.all.first(),
     val providerProfiles: List<ProviderProfile> = emptyList(),
     val providerApiKey: String = "",
@@ -217,16 +218,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val eventJson = Json { ignoreUnknownKeys = true; classDiscriminator = "eventType" }
     private val extensionCatalog = ExtensionCatalogClient(
         githubTokenProvider = { container.secretStore.get("github:github.com:token") },
+        curatedDshCacheFile = File(getApplication<Application>().filesDir, "catalog-cache/awesome-dsh-plugin.md"),
     )
     private var extensionRecommendationCache: List<CatalogExtension> = emptyList()
     private val extensionInstaller by lazy { ExtensionInstaller(File(getApplication<Application>().filesDir, "extensions")) }
     private val desktopConnection = container.desktopConnection
+    private val appUpdateManager = AppUpdateManager(
+        context = getApplication(),
+        githubTokenProvider = { container.secretStore.get("github:github.com:token") },
+    )
+    private var availableAppRelease: SaiRelease? = null
 
     init {
         initializeDefaultWorkspace()
         refreshFiles()
         probeRuntime()
         refreshGitHubCli()
+        checkForAppUpdate(automatic = true)
         if (_ui.value.rootfsInstallState is RootfsInstallState.NotInstalled) installRootfs()
         if (container.providerSettings.hasCredential()) refreshModels()
         loadExtensionRecommendations()
@@ -303,6 +311,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     .onFailure { error -> _ui.update { it.copy(message = error.message ?: "屏幕捕获失败") } }
             }
         }
+    }
+
+    fun checkForAppUpdate(automatic: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (automatic) {
+            val lastCheck = uiPreferences.getLong("app_update_last_check", 0L)
+            if (now - lastCheck < 24L * 60L * 60L * 1000L) return
+        }
+        viewModelScope.launch {
+            _ui.update { it.copy(appUpdate = it.appUpdate.copy(phase = AppUpdatePhase.CHECKING, message = null)) }
+            runCatching { appUpdateManager.check() }.onSuccess { release ->
+                uiPreferences.edit().putLong("app_update_last_check", now).apply()
+                availableAppRelease = release
+                _ui.update { state ->
+                    state.copy(appUpdate = if (release == null) {
+                        state.appUpdate.copy(phase = AppUpdatePhase.CURRENT, latestVersion = BuildConfig.VERSION_NAME, message = "已是最新版本")
+                    } else {
+                        state.appUpdate.copy(
+                            phase = AppUpdatePhase.AVAILABLE,
+                            latestVersion = release.tag.removePrefix("v"),
+                            releaseUrl = release.pageUrl,
+                            releaseNotes = release.notes,
+                            message = "发现新版本 ${release.tag.removePrefix("v")}",
+                        )
+                    })
+                }
+            }.onFailure { error ->
+                _ui.update { it.copy(appUpdate = it.appUpdate.copy(phase = AppUpdatePhase.ERROR, message = error.message ?: "更新检查失败")) }
+            }
+        }
+    }
+
+    fun downloadAppUpdate() {
+        val release = availableAppRelease ?: return checkForAppUpdate()
+        viewModelScope.launch {
+            _ui.update { it.copy(appUpdate = it.appUpdate.copy(phase = AppUpdatePhase.DOWNLOADING, downloadedBytes = 0, totalBytes = 0, message = "正在下载并校验…")) }
+            runCatching {
+                appUpdateManager.download(release) { copied, total ->
+                    _ui.update { state -> state.copy(appUpdate = state.appUpdate.copy(downloadedBytes = copied, totalBytes = total)) }
+                }
+            }.onSuccess { apk ->
+                _ui.update { it.copy(appUpdate = it.appUpdate.copy(phase = AppUpdatePhase.READY, apkPath = apk.absolutePath, message = "下载、SHA-256 与签名校验完成")) }
+            }.onFailure { error ->
+                _ui.update { it.copy(appUpdate = it.appUpdate.copy(phase = AppUpdatePhase.ERROR, message = error.message ?: "更新下载失败")) }
+            }
+        }
+    }
+
+    fun installDownloadedAppUpdate() {
+        val path = _ui.value.appUpdate.apkPath ?: return
+        runCatching { appUpdateManager.launchInstaller(File(path)) }
+            .onSuccess { launched ->
+                _ui.update { it.copy(message = if (launched) "请在系统安装器中确认更新" else "请允许 sai 安装未知应用，返回后再次点击安装") }
+            }
+            .onFailure { error -> _ui.update { it.copy(message = error.message ?: "无法打开系统安装器") } }
     }
 
     private fun initializeDefaultWorkspace() {
@@ -1550,21 +1613,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun loadExtensionRecommendations() {
         if (_ui.value.extensionSearchRunning) return
         viewModelScope.launch {
-            _ui.update { it.copy(extensionSearchRunning = true, extensionError = null, extensionFeedTitle = "热门推荐") }
+            _ui.update { it.copy(extensionSearchRunning = true, extensionError = null, extensionFeedTitle = "精选推荐") }
             runCatching { extensionCatalog.recommendations() }
                 .onSuccess { results ->
                     if (results.isNotEmpty()) extensionRecommendationCache = results
                     _ui.update { it.copy(
                         extensionSearchRunning = false,
                         extensionResults = results.ifEmpty { extensionRecommendationCache },
-                        extensionFeedTitle = if (results.isEmpty() && extensionRecommendationCache.isNotEmpty()) "热门推荐 · 缓存" else "热门推荐 · 实时",
+                        extensionFeedTitle = when {
+                            results.isEmpty() && extensionRecommendationCache.isNotEmpty() -> "精选推荐 · 缓存"
+                            results.any { item -> item.source.contains("本地缓存") } -> "精选推荐 · 部分缓存"
+                            else -> "精选推荐 · 实时"
+                        },
                         extensionError = if (results.isEmpty() && extensionRecommendationCache.isEmpty()) "暂时无法加载热门推荐，请稍后重试" else null,
                     ) }
                 }
                 .onFailure { error -> _ui.update { it.copy(
                     extensionSearchRunning = false,
                     extensionResults = extensionRecommendationCache.ifEmpty { it.extensionResults },
-                    extensionFeedTitle = if (extensionRecommendationCache.isNotEmpty()) "热门推荐 · 缓存" else "热门推荐",
+                    extensionFeedTitle = if (extensionRecommendationCache.isNotEmpty()) "精选推荐 · 缓存" else "精选推荐",
                     extensionError = if (extensionRecommendationCache.isEmpty()) error.message ?: "热门推荐加载失败" else null,
                 ) } }
         }

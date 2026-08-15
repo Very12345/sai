@@ -22,8 +22,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URLEncoder
-import java.time.Instant
-import java.time.temporal.ChronoUnit
 
 @Serializable
 enum class CatalogKind { MCP_REGISTRY, SKILLS_SH, CLAUDE_MARKETPLACE, GIT, ZIP }
@@ -81,6 +79,7 @@ class ExtensionCatalogClient(
     private val client: OkHttpClient = ProtectedHttpClients.catalog(),
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val githubTokenProvider: () -> CharArray? = { null },
+    private val curatedDshCacheFile: File? = null,
 ) {
     suspend fun searchMcp(query: String, limit: Int = 30): List<CatalogExtension> = withContext(Dispatchers.IO) {
         val url = "https://registry.modelcontextprotocol.io/v0.1/servers".toHttpUrl().newBuilder()
@@ -118,8 +117,7 @@ class ExtensionCatalogClient(
 
     suspend fun searchPlugins(query: String, limit: Int = 30): List<CatalogExtension> = withContext(Dispatchers.IO) {
         val normalized = query.trim()
-        (runCatching { officialSaiPlugins() }.getOrDefault(emptyList()) +
-            runCatching { searchDshPlugins(normalized, limit) }.getOrDefault(emptyList()))
+        runCatching { curatedDshPlugins(normalized, limit) }.getOrDefault(emptyList())
             .distinctBy(CatalogExtension::id)
             .filter { normalized.isBlank() || it.name.contains(normalized, true) || it.description.contains(normalized, true) }
             .take(limit)
@@ -129,8 +127,7 @@ class ExtensionCatalogClient(
         val perKind = (limit / 2).coerceAtLeast(30)
         val skills = runCatching { publicSkills("trending", perKind) }.getOrDefault(emptyList())
         val mcp = runCatching { searchMcp("", perKind) }.getOrDefault(emptyList())
-        val dsh = (runCatching { officialSaiPlugins() }.getOrDefault(emptyList()) +
-            runCatching { searchDshPlugins("", perKind) }.getOrDefault(emptyList()))
+        val dsh = runCatching { curatedDshPlugins("", perKind) }.getOrDefault(emptyList())
         val builtIns = builtInRecommendations()
         val remote = (dsh + skills + mcp).distinctBy { "${it.kind}:${it.id}" }
             .sortedWith(compareByDescending<CatalogExtension> { it.installs != null }.thenByDescending { it.installs ?: 0L })
@@ -138,43 +135,63 @@ class ExtensionCatalogClient(
         (pinned + remote + builtIns).distinctBy { "${it.kind}:${it.id}" }
     }
 
-    private fun searchDshPlugins(query: String, limit: Int): List<CatalogExtension> {
-        val terms = buildString {
-            append("topic:dsh-plugin")
-            if (query.isNotBlank() && query.lowercase() !in setOf("dsh-puglin", "dsh-plugin")) append(" ${query.trim()}")
+    private fun curatedDshPlugins(query: String, limit: Int): List<CatalogExtension> {
+        val url = "https://raw.githubusercontent.com/awesome-dsh-plugin/awesome-dsh-plugin/main/README.md"
+        val (markdown, cached) = runCatching {
+            getText(url, "text/plain").also { body ->
+                curatedDshCacheFile?.let { file ->
+                    file.parentFile?.mkdirs()
+                    file.writeText(body)
+                }
+            } to false
+        }.getOrElse { error ->
+            val cache = curatedDshCacheFile?.takeIf(File::isFile)?.readText()
+            if (cache.isNullOrBlank()) throw error
+            cache to true
         }
-        val url = "https://api.github.com/search/repositories".toHttpUrl().newBuilder()
-            .addQueryParameter("q", terms)
-            .addQueryParameter("sort", "stars")
-            .addQueryParameter("order", "desc")
-            .addQueryParameter("per_page", limit.coerceIn(1, 100).toString())
-            .build()
-        val epoch = Instant.parse("2026-08-13T00:00:00Z")
-        val activeAfter = Instant.now().minus(180, ChronoUnit.DAYS)
-        return getJson(url.toString()).jsonObject.arrayAt("items").mapNotNull { element ->
-            val repo = element as? JsonObject ?: return@mapNotNull null
-            val fullName = repo.stringAt("full_name") ?: return@mapNotNull null
-            val created = repo.stringAt("created_at")?.let { runCatching { Instant.parse(it) }.getOrNull() }
-            val updated = repo.stringAt("updated_at")?.let { runCatching { Instant.parse(it) }.getOrNull() }
-            if (updated == null || updated.isBefore(activeAfter)) return@mapNotNull null
-            val recentRepository = created != null && !created.isBefore(epoch)
+        return parseAwesomeDshCatalog(markdown, cached)
+            .filter { item ->
+                query.isBlank() || query.lowercase() in setOf("dsh-plugin", "dsh-puglin") ||
+                    item.name.contains(query, true) || item.description.contains(query, true) ||
+                    item.version.contains(query, true)
+            }
+            .take(limit)
+    }
+
+    internal fun parseAwesomeDshCatalog(markdown: String, cached: Boolean = false): List<CatalogExtension> {
+        var category = "DSH 插件"
+        val heading = Regex("^###\\s+(.+?)\\s*$")
+        val entry = Regex("^- \\[([^]]+)]\\((https://github\\.com/([^/]+)/([^/)#]+)(?:/tree/[^/]+/(.*?))?)\\)\\s+-\\s+(.+?)\\s*$")
+        return markdown.lineSequence().mapNotNull { rawLine ->
+            val line = rawLine.trim()
+            heading.matchEntire(line)?.let { match ->
+                category = match.groupValues[1].trim()
+                return@mapNotNull null
+            }
+            val match = entry.matchEntire(line) ?: return@mapNotNull null
+            val label = match.groupValues[1].trim()
+            val homepage = match.groupValues[2].trim()
+            val owner = match.groupValues[3].trim()
+            val repository = match.groupValues[4].trim().removeSuffix(".git")
+            val subdirectory = match.groupValues[5].trim().trim('/')
+            val packageHint = label.substringAfter('#', "").trim()
+            val path = subdirectory.ifBlank { packageHint }
+            val fullName = "$owner/$repository"
             CatalogExtension(
-                id = "dsh:$fullName",
-                name = repo.stringAt("name") ?: fullName.substringAfter('/'),
-                description = repo.stringAt("description").orEmpty(),
-                version = repo.stringAt("default_branch").orEmpty(),
-                source = "GitHub · dsh-plugin",
-                kind = ExtensionKind.PLUGIN,
-                installUrl = repo.stringAt("clone_url"),
-                homepage = repo.stringAt("html_url"),
-                installs = (repo["stargazers_count"] as? JsonPrimitive)?.contentOrNull?.toLongOrNull(),
-                auditSummary = if (recentRepository) {
-                    "DSH 语义纪元后发布 · 安装前仍需验证 bundle、许可证与预构建产物"
-                } else {
-                    "旧仓库中的近期 DSH 项目 · 仅供发现，存在兼容包后才能安装"
+                id = buildString {
+                    append("dsh:").append(fullName)
+                    if (path.isNotBlank()) append('#').append(path)
                 },
+                name = packageHint.ifBlank { repository },
+                description = match.groupValues[6].trim(),
+                version = category,
+                source = if (cached) "awesome-dsh-plugin · 本地缓存" else "awesome-dsh-plugin · 精选目录",
+                kind = ExtensionKind.PLUGIN,
+                installUrl = "https://github.com/$fullName.git",
+                homepage = homepage,
+                auditSummary = "人工维护的精选目录 · 收录不等于安全审计，安装前仍会执行本地预检",
             )
-        }
+        }.distinctBy(CatalogExtension::id).toList()
     }
 
     /** First-party packages are accepted only from the detached Ed25519-signed static catalog. */
@@ -327,7 +344,8 @@ class ExtensionCatalogClient(
     ): ExtensionInstallPlan = withContext(Dispatchers.IO) {
         require(item.kind == ExtensionKind.PLUGIN) { "只有插件条目可以使用 DSH 便携安装器" }
         require(item.id.startsWith("dsh:")) { "该插件没有可验证的 GitHub DSH 源；当前只能查看介绍" }
-        val repositoryId = item.id.removePrefix("dsh:")
+        val repositoryId = item.id.removePrefix("dsh:").substringBefore('#')
+        val requestedDirectory = item.id.substringAfter('#', "").trim('/')
         val parts = repositoryId.split('/')
         require(parts.size == 2) { "DSH 插件仓库标识无效" }
         val (owner, repository) = parts
@@ -339,10 +357,15 @@ class ExtensionCatalogClient(
         onProgress("正在读取文件树与兼容清单…", 0.2f)
         val tree = getJson("https://api.github.com/repos/$owner/$repository/git/trees/${urlPart(branch)}?recursive=1")
             .jsonObject.arrayAt("tree").mapNotNull { it as? JsonObject }
-        val packageEntry = tree
+        val packageEntries = tree
             .filter { it.stringAt("type") == "blob" && it.stringAt("path")?.endsWith("package.json") == true }
-            .sortedBy { it.stringAt("path")?.count { char -> char == '/' } ?: Int.MAX_VALUE }
-            .firstOrNull() ?: error("仓库中没有 package.json")
+        val packageEntry = packageEntries
+            .filter { requestedDirectory.isBlank() || it.stringAt("path")?.startsWith("$requestedDirectory/") == true }
+            .minByOrNull { entry ->
+                val path = entry.stringAt("path").orEmpty()
+                if (requestedDirectory.isBlank()) path.count { it == '/' }
+                else path.removePrefix("$requestedDirectory/").count { it == '/' }
+            } ?: error(if (requestedDirectory.isBlank()) "仓库中没有 package.json" else "精选目录指定的子包中没有 package.json：$requestedDirectory")
         val packagePath = packageEntry.stringAt("path") ?: error("package.json 路径无效")
         val packageDirectory = packagePath.substringBeforeLast('/', "")
         val prefix = packageDirectory.takeIf(String::isNotBlank)?.plus('/') ?: ""
