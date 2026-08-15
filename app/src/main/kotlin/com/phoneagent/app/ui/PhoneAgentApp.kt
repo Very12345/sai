@@ -1,6 +1,7 @@
 package com.phoneagent.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -50,6 +51,13 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Hub
@@ -96,6 +104,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -107,6 +116,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -118,6 +129,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
@@ -127,19 +139,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -149,16 +169,22 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import android.annotation.SuppressLint
+import android.graphics.BitmapFactory
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import android.webkit.WebChromeClient
+import android.webkit.ConsoleMessage
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceError
+import android.util.Log
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import android.text.method.LinkMovementMethod
 import android.widget.TextView
 import androidx.webkit.ProfileStore
@@ -167,12 +193,16 @@ import androidx.webkit.WebViewFeature
 import androidx.core.content.FileProvider
 import androidx.core.content.ContextCompat
 import com.phoneagent.app.service.PetOverlayService
+import com.phoneagent.app.service.SailRobotView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -251,6 +281,8 @@ fun PhoneAgentApp(
     val wide = configuration.screenWidthDp >= 700 ||
         (configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && configuration.screenWidthDp >= 600)
     var sidebarOpen by remember { mutableStateOf(false) }
+    var dshMenuToggleNonce by remember { mutableStateOf(0) }
+    var dshOverlayVisible by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxSize()) {
             if (wide) {
@@ -275,7 +307,13 @@ fun PhoneAgentApp(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    if (!wide) IconButton(onClick = { sidebarOpen = true }) {
+                    if (!wide) IconButton(onClick = {
+                        if (state.section == MainSection.AGENT && state.dshRuntime.ready) {
+                            dshMenuToggleNonce += 1
+                        } else {
+                            sidebarOpen = true
+                        }
+                    }) {
                         Icon(Icons.Default.Menu, "打开项目与会话")
                     }
                 },
@@ -299,9 +337,18 @@ fun PhoneAgentApp(
                     }
                 },
                 actions = {
+                    if (state.selectedWorkspaceId != null) {
+                        IconButton(onClick = viewModel::openSelectedProjectFiles) {
+                            Icon(Icons.Default.FolderOpen, "打开当前项目目录")
+                        }
+                    }
                     if (state.runState in setOf(AgentRunState.RUNNING, AgentRunState.WAITING_APPROVAL)) {
                         IconButton(onClick = viewModel::stopAgent) { Icon(Icons.Default.Stop, "停止 Agent") }
                     }
+                    // The in-app pet is drawn above the scaffold so its launch animation can
+                    // leave the app smoothly. Reserve a real action slot for it instead of
+                    // letting it cover the project-folder and stop buttons underneath.
+                    if (state.taskPetVisible && !sidebarOpen) Spacer(Modifier.width(82.dp))
                 },
             )
         },
@@ -324,9 +371,17 @@ fun PhoneAgentApp(
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
             when (state.section) {
-                MainSection.AGENT -> DshAgentScreen(state, viewModel)
+                MainSection.AGENT -> DshAgentScreen(
+                    state = state,
+                    viewModel = viewModel,
+                    menuToggleNonce = dshMenuToggleNonce,
+                    onOverlayVisibilityChanged = { dshOverlayVisible = it },
+                    startVoiceInput = startVoiceInput,
+                    finishVoiceInput = finishVoiceInput,
+                    requestPhoneFiles = requestPhoneFiles,
+                )
                 MainSection.FILES -> FilesScreen(state, viewModel)
-                MainSection.TERMINAL -> TerminalScreenV2(state, viewModel)
+                MainSection.TERMINAL -> TerminalScreenV3(state, viewModel)
                 MainSection.BROWSER -> BrowserScreen(state, viewModel)
                 MainSection.EXTENSIONS -> ExtensionsScreen(state, viewModel, requestExtensionZip)
                 MainSection.SETTINGS -> SettingsHub(
@@ -335,6 +390,7 @@ fun PhoneAgentApp(
                     requestExternalDirectory,
                     requestAllFilesAccess,
                     scanDesktopPairing,
+                    toggleVoiceCall,
                 )
             }
         }
@@ -357,7 +413,11 @@ fun PhoneAgentApp(
                 )
             }
         }
-        if (state.taskPetVisible) {
+        if (
+            state.taskPetVisible &&
+            !sidebarOpen &&
+            !(state.section == MainSection.AGENT && dshOverlayVisible)
+        ) {
             SaiPetDock(
                 state = state,
                 viewModel = viewModel,
@@ -466,29 +526,6 @@ private fun SaiPetDock(
     detachToSystemOverlay: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (state.taskPetMinimized) {
-        Box(
-            modifier
-                .size(width = 52.dp, height = 46.dp)
-                .offset(x = 7.dp)
-                .pointerInput(Unit) {
-                    detectDragGestures { change, amount ->
-                        change.consume()
-                        if (amount.x < -2f || kotlin.math.abs(amount.y) > 2f) viewModel.setTaskPetMinimized(false)
-                    }
-                }
-                .clickable { viewModel.setTaskPetMinimized(false) },
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Icon(
-                painterResource(R.drawable.ic_sai_pet),
-                "展开任务机器人",
-                Modifier.size(48.dp).graphicsLayer(rotationZ = 18f, alpha = .92f),
-                tint = Color.Unspecified,
-            )
-        }
-        return
-    }
     val busyTasks = state.taskHandles.values.filter { handle ->
         handle.queueState in setOf(TaskQueueState.QUEUED, TaskQueueState.STARTING, TaskQueueState.ACTIVE, TaskQueueState.WAITING_RESOURCE) ||
             handle.runState in setOf(AgentRunState.RUNNING, AgentRunState.WAITING_APPROVAL)
@@ -500,39 +537,56 @@ private fun SaiPetDock(
         busyTasks.isNotEmpty() -> "划船执行任务"
         else -> "扬帆巡航"
     }
-    val petColors = remember(state.petTheme) { petThemeColors(state.petTheme) }
     var expanded by remember { mutableStateOf(false) }
     var dragDistance by remember { mutableStateOf(0f) }
-    val transition = rememberInfiniteTransition(label = "sai-pet-motion")
-    val motionPhase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(if (state.voiceCallActive) 520 else 920), RepeatMode.Restart),
-        label = "sai-pet-action",
-    )
-    val bob by transition.animateFloat(
-        initialValue = if (busyTasks.isNotEmpty() || state.voiceCallActive) -2.5f else 0f,
-        targetValue = if (busyTasks.isNotEmpty() || state.voiceCallActive) 2.5f else 0f,
-        animationSpec = infiniteRepeatable(tween(760), RepeatMode.Reverse),
-        label = "sai-pet-bob",
-    )
-    val glow by transition.animateFloat(
-        initialValue = if (state.voiceCallActive) .12f else 0f,
-        targetValue = if (state.voiceCallActive) .46f else 0f,
-        animationSpec = infiniteRepeatable(tween(680), RepeatMode.Reverse),
-        label = "sai-pet-voice-glow",
-    )
-    val wave = kotlin.math.sin(motionPhase * Math.PI * 2).toFloat()
-    val petRotation = when {
-        state.voiceCallActive -> wave * 7f
-        waitingApproval -> wave * 1.5f
-        busyTasks.isNotEmpty() -> wave * 4.5f
-        else -> wave * 2.2f
+    var launching by remember { mutableStateOf(false) }
+    val launch = remember { Animatable(0f) }
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val context = LocalContext.current
+    val launchDistance = (configuration.screenHeightDp * .58f - 72f).coerceAtLeast(220f)
+    val launchTravel = if (launch.value <= .2f) {
+        -kotlin.math.sin((launch.value / .2f) * Math.PI).toFloat() * 8f
+    } else {
+        val travel = ((launch.value - .2f) / .8f).coerceIn(0f, 1f)
+        launchDistance * FastOutSlowInEasing.transform(travel)
     }
-    val petShiftX = if (busyTasks.isNotEmpty() && !waitingApproval) wave * 3.2f else 0f
-    val petScaleY = if (waitingApproval) .88f + motionPhase * .08f else 1f
+    val startLaunch = {
+        if (!launching) {
+            expanded = false
+            launching = true
+        }
+    }
 
-    Row(modifier, verticalAlignment = Alignment.Top) {
+    LaunchedEffect(launching) {
+        if (!launching) return@LaunchedEffect
+        val targetY = with(density) { launchDistance.dp.roundToPx() }
+        val targetX = (configuration.screenWidthDp - 84).coerceAtLeast(0)
+        context.getSharedPreferences("sai-ui", 0).edit()
+            .putInt("system_pet_x", with(density) { targetX.dp.roundToPx() })
+            .putInt("system_pet_y", targetY)
+            .apply()
+        launch.snapTo(0f)
+        launch.animateTo(.2f, tween(700, easing = FastOutSlowInEasing))
+        launch.animateTo(1f, tween(2_500, easing = FastOutSlowInEasing))
+        detachToSystemOverlay()
+        launch.snapTo(0f)
+        launching = false
+    }
+
+    Row(
+        modifier.graphicsLayer {
+            translationY = launchTravel * density.density
+            translationX = -kotlin.math.sin(launch.value * Math.PI).toFloat() * 52f * density.density
+            rotationY = kotlin.math.sin(launch.value * Math.PI).toFloat() * 90f
+            rotationZ = (1f - launch.value) * if (launching) -7f else 0f
+            val approachScale = 1f + launch.value * .11f
+            scaleX = approachScale
+            scaleY = approachScale
+            cameraDistance = 14f * density.density
+        },
+        verticalAlignment = Alignment.Top,
+    ) {
         if (expanded) {
             ElevatedCard(Modifier.widthIn(min = 212.dp, max = 260.dp).padding(top = 5.dp, end = 4.dp)) {
                 Column(Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -581,79 +635,42 @@ private fun SaiPetDock(
                 }
             }
         }
-        Box(
-            Modifier.size(width = 76.dp, height = 72.dp)
-                .offset(y = bob.dp)
-                .drawBehind {
-                    if (state.voiceCallActive) drawCircle(petColors[1].copy(alpha = glow), radius = size.minDimension * .52f)
-                    repeat(8) { index ->
-                        val seed = index / 8f
-                        val t = (glow + seed) % 1f
-                        val x = size.width * (.08f + seed * .84f)
-                        val y = size.height * .88f - kotlin.math.sin(t * Math.PI).toFloat() * (4f + index % 3) * density
-                        drawCircle(
-                            color = petColors[0].copy(alpha = (.22f + (1f - t) * .5f).coerceIn(.18f, .72f)),
-                            radius = (1.1f + index % 3 * .45f) * density,
-                            center = androidx.compose.ui.geometry.Offset(x, y),
-                        )
-                    }
-                }
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = { dragDistance = 0f },
-                        onDragEnd = {
-                            if (dragDistance > 42f) detachToSystemOverlay()
+        key(state.taskPetMinimized) {
+            AndroidView(
+                modifier = Modifier.size(width = 76.dp, height = 72.dp),
+                factory = { androidContext ->
+                    SailRobotView(
+                        context = androidContext,
+                        theme = state.petTheme,
+                        onMove = { dx, dy -> dragDistance += kotlin.math.abs(dx) + kotlin.math.abs(dy) },
+                        onOpen = {
+                            if (state.taskPetMinimized) startLaunch() else expanded = !expanded
+                        },
+                        onVoice = toggleVoiceCall,
+                        onPositionSaved = {
+                            if (dragDistance > 42f) startLaunch()
                             dragDistance = 0f
                         },
-                    ) { change, amount ->
-                        change.consume()
-                        dragDistance += kotlin.math.abs(amount.x) + kotlin.math.abs(amount.y)
+                        onMinimize = { viewModel.setTaskPetMinimized(true) },
+                        onRestore = { viewModel.setTaskPetMinimized(false) },
+                    ).apply {
+                        showCloseControl = false
+                        showVoiceControl = false
                     }
                 },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                painterResource(R.drawable.ic_sai_pet),
-                "sai 任务机器人，拖动可成为悬浮窗",
-                Modifier.size(68.dp).graphicsLayer(
-                    rotationZ = petRotation,
-                    translationX = petShiftX,
-                    scaleY = petScaleY,
-                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(.5f, .88f),
-                ).clickable { expanded = !expanded },
-                tint = Color.Unspecified,
+                update = { pet ->
+                    pet.theme = state.petTheme
+                    pet.taskCount = busyTasks.size
+                    pet.waitingApproval = waitingApproval
+                    pet.statusText = if (state.voiceCallActive && state.voiceCallTranscript.isNotBlank()) state.voiceCallTranscript else petMotion
+                    pet.voiceActive = state.voiceCallActive
+                    pet.dormant = state.taskPetMinimized && !launching
+                    pet.launchProgress = launch.value
+                    pet.showCloseControl = false
+                    pet.showVoiceControl = false
+                },
             )
-            Surface(
-                modifier = Modifier.align(Alignment.BottomEnd).size(48.dp).clickable(onClick = toggleVoiceCall),
-                shape = CircleShape,
-                color = if (state.voiceCallActive) petColors[2] else MaterialTheme.colorScheme.surface,
-                border = androidx.compose.foundation.BorderStroke(1.dp, if (state.voiceCallActive) Color.White else petColors[2]),
-                shadowElevation = 2.dp,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Mic, "语音通话", Modifier.size(27.dp), tint = if (state.voiceCallActive) Color.White else petColors[2])
-                }
-            }
-            if (busyTasks.isNotEmpty()) {
-                Text(
-                    busyTasks.size.coerceAtMost(9).toString(),
-                    modifier = Modifier.align(Alignment.TopStart).background(MaterialTheme.colorScheme.error, CircleShape).padding(horizontal = 5.dp, vertical = 1.dp),
-                    color = MaterialTheme.colorScheme.onError,
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
         }
-            Surface(
-                modifier = Modifier.size(22.dp).clickable { viewModel.setTaskPetMinimized(true) },
-                shape = CircleShape,
-                color = Color(0xE6111526),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .92f)),
-                shadowElevation = 3.dp,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Close, "收起宠物", Modifier.size(14.dp), tint = Color.White)
-                }
-            }
     }
 }
 
@@ -870,10 +887,50 @@ private fun SessionStatus(handle: TaskHandle?, persistedState: String) {
 
 @Composable
 @SuppressLint("SetJavaScriptEnabled")
-private fun DshAgentScreen(state: MainUiState, viewModel: MainViewModel) {
+private fun DshAgentScreen(
+    state: MainUiState,
+    viewModel: MainViewModel,
+    menuToggleNonce: Int,
+    onOverlayVisibilityChanged: (Boolean) -> Unit,
+    startVoiceInput: () -> Unit,
+    finishVoiceInput: (Boolean) -> Unit,
+    requestPhoneFiles: () -> Unit,
+) {
     val runtime = state.dshRuntime
     val context = LocalContext.current
     val trustedUrl = runtime.webUrl
+    var webContentReady by remember(runtime.runtimeVersion, trustedUrl) { mutableStateOf(false) }
+    var webLoadFailed by remember(runtime.runtimeVersion, trustedUrl) { mutableStateOf(false) }
+    var dshWebView by remember(runtime.runtimeVersion, trustedUrl) { mutableStateOf<WebView?>(null) }
+    LaunchedEffect(webContentReady, dshWebView) {
+        if (!webContentReady) {
+            onOverlayVisibilityChanged(false)
+            return@LaunchedEffect
+        }
+        while (true) {
+            dshWebView?.evaluateJavascript(
+                """
+                (function () {
+                  const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+                  return dialogs.some((node) => {
+                    const style = window.getComputedStyle(node);
+                    const rect = node.getBoundingClientRect();
+                    return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 1 && rect.height > 1;
+                  });
+                })()
+                """.trimIndent(),
+            ) { result -> onOverlayVisibilityChanged(result == "true") }
+            delay(300)
+        }
+    }
+    LaunchedEffect(menuToggleNonce, dshWebView) {
+        if (menuToggleNonce > 0) {
+            dshWebView?.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('sai:navigation-toggle'))",
+                null,
+            )
+        }
+    }
     Box(
         Modifier.fillMaxSize().background(
             Brush.verticalGradient(
@@ -886,11 +943,23 @@ private fun DshAgentScreen(state: MainUiState, viewModel: MainViewModel) {
         ),
     ) {
         if (runtime.ready && trustedUrl != null) {
+            if (!webContentReady) {
+                Column(
+                    Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(14.dp))
+                    Text("正在启动 sai Agent", style = MaterialTheme.typography.titleMedium)
+                }
+            }
             key(runtime.runtimeVersion, trustedUrl, runtime.accessToken) {
                 AndroidView(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().alpha(if (webContentReady) 1f else 0f),
                     factory = { viewContext ->
                         WebView(viewContext).apply {
+                            dshWebView = this
                             setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
@@ -899,7 +968,14 @@ private fun DshAgentScreen(state: MainUiState, viewModel: MainViewModel) {
                             settings.setSupportMultipleWindows(false)
                             settings.javaScriptCanOpenWindowsAutomatically = false
                             settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                            webChromeClient = WebChromeClient()
+                            webChromeClient = object : WebChromeClient() {
+                                override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                                    val line = "${message.messageLevel()}: ${message.message()} (${message.sourceId()}:${message.lineNumber()})"
+                                    Log.e("SaiDshWeb", line)
+                                    if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) webLoadFailed = true
+                                    return true
+                                }
+                            }
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                                     val uri = request.url
@@ -917,8 +993,59 @@ private fun DshAgentScreen(state: MainUiState, viewModel: MainViewModel) {
                                     error: WebResourceError,
                                 ) {
                                     if (request.isForMainFrame) {
+                                        webLoadFailed = true
                                         viewModel.showMessage("DSH 页面加载失败：${error.description}")
                                     }
+                                }
+
+                                override fun onPageFinished(view: WebView, url: String) {
+                                    view.evaluateJavascript(
+                                        """
+                                        (function () {
+                                          if (document.getElementById('sai-android-dialog-fix')) return;
+                                          const style = document.createElement('style');
+                                          style.id = 'sai-android-dialog-fix';
+                                          style.textContent = `@media (max-width: 600px) {
+                                            html, body, #root { height: var(--sai-android-viewport-height) !important; min-height: var(--sai-android-viewport-height) !important; }
+                                            [role='dialog'] { width: calc(100vw - 24px) !important; height: auto !important; max-height: none !important; overflow: auto !important; border-radius: 18px !important; }
+                                            [role='dialog'] > div { max-height: none !important; min-height: min-content !important; overflow: visible !important; }
+                                          }`;
+                                          document.head.appendChild(style);
+                                          const updateSaiViewport = () => {
+                                            const height = Math.max(320, window.innerHeight || (window.visualViewport && window.visualViewport.height) || 0);
+                                            document.documentElement.style.setProperty('--sai-android-viewport-height', height + 'px');
+                                          };
+                                          updateSaiViewport();
+                                          window.addEventListener('resize', updateSaiViewport, { passive: true });
+                                          if (window.visualViewport) window.visualViewport.addEventListener('resize', updateSaiViewport, { passive: true });
+                                        })();
+                                        """.trimIndent(),
+                                        null,
+                                    )
+                                    fun probe(remaining: Int) {
+                                        view.evaluateJavascript(
+                                            "(function(){const r=document.querySelector('#root');const b=r&&r.getBoundingClientRect();return !!(r&&r.children.length>0&&b&&b.height>1&&document.body.innerText.trim().length>0)})()",
+                                        ) { rendered ->
+                                            if (rendered == "true") {
+                                                webContentReady = true
+                                                webLoadFailed = false
+                                            } else if (remaining > 0) {
+                                                view.postDelayed({ probe(remaining - 1) }, 500)
+                                            } else {
+                                                webLoadFailed = true
+                                                Log.e("SaiDshWeb", "DSH page finished but rendered no visible client DOM: $url")
+                                            }
+                                        }
+                                    }
+                                    probe(12)
+                                }
+
+                                override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                                    webContentReady = false
+                                    webLoadFailed = true
+                                    Log.e("SaiDshWeb", "WebView renderer exited; crashed=${detail.didCrash()}")
+                                    view.destroy()
+                                    return true
                                 }
                             }
                             val token = runtime.accessToken
@@ -940,6 +1067,21 @@ private fun DshAgentScreen(state: MainUiState, viewModel: MainViewModel) {
                     update = {},
                 )
             }
+            if (webLoadFailed && !webContentReady) {
+                Surface(
+                    modifier = Modifier.align(Alignment.TopCenter).padding(8.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = .94f),
+                    shape = CircleShape,
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("DSH 界面未完成渲染，已启用本地界面", style = MaterialTheme.typography.labelMedium)
+                        TextButton(onClick = viewModel::restartDshRuntime) { Text("重试") }
+                    }
+                }
+            }
         } else {
             Column(
                 Modifier.align(Alignment.Center).padding(28.dp),
@@ -951,7 +1093,7 @@ private fun DshAgentScreen(state: MainUiState, viewModel: MainViewModel) {
                 } else {
                     Icon(Icons.Default.Terminal, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
                 }
-                Text("DeepSeek Harness", style = MaterialTheme.typography.titleLarge)
+                Text("sai Agent", style = MaterialTheme.typography.titleLarge)
                 Text(
                     runtime.detail,
                     style = MaterialTheme.typography.bodyMedium,
@@ -974,203 +1116,6 @@ private fun DshAgentScreen(state: MainUiState, viewModel: MainViewModel) {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun AgentScreen(
-    state: MainUiState,
-    viewModel: MainViewModel,
-    startVoiceInput: () -> Unit,
-    finishVoiceInput: (Boolean) -> Unit,
-    requestPhoneFiles: () -> Unit,
-) {
-    val conversation = remember(state.events, state.runState) { reduceAgentEvents(state.events, state.runState) }
-    val projectName = state.workspaces.firstOrNull { it.id == state.selectedWorkspaceId }?.name ?: "默认项目"
-    val sessionTitle = state.sessions.firstOrNull { it.id == state.selectedSessionId }?.title ?: "新会话"
-    val selectedTaskHandle = state.selectedSessionId?.let(state.taskHandles::get)
-    val selectedTaskBusy = selectedTaskHandle?.let { handle ->
-        handle.queueState in setOf(TaskQueueState.QUEUED, TaskQueueState.STARTING, TaskQueueState.ACTIVE, TaskQueueState.WAITING_RESOURCE) ||
-            handle.runState in setOf(AgentRunState.RUNNING, AgentRunState.WAITING_APPROVAL)
-    } == true
-    val taskBusy = state.taskHandles.values.any { handle ->
-        handle.workspaceId == state.selectedWorkspaceId &&
-            handle.queueState in setOf(TaskQueueState.QUEUED, TaskQueueState.STARTING, TaskQueueState.ACTIVE, TaskQueueState.WAITING_RESOURCE)
-    }
-    var composerExpanded by remember(state.selectedSessionId) { mutableStateOf(!taskBusy) }
-    var undoTurnIndex by remember(state.selectedSessionId) { mutableStateOf<Int?>(null) }
-    var restoreProjectOnUndo by remember { mutableStateOf(false) }
-    val conversationListState = rememberLazyListState()
-    var followConversationTail by remember(state.selectedSessionId) { mutableStateOf(true) }
-    LaunchedEffect(taskBusy) { if (taskBusy) composerExpanded = false }
-    LaunchedEffect(state.voiceCallActive) { if (state.voiceCallActive) composerExpanded = false }
-    LaunchedEffect(conversationListState, state.selectedSessionId) {
-        snapshotFlow {
-            conversationListState.isScrollInProgress to conversationListState.layoutInfo.run {
-                val last = visibleItemsInfo.lastOrNull()?.index ?: -1
-                last >= totalItemsCount - 2
-            }
-        }.collect { (scrolling, nearTail) -> if (scrolling) followConversationTail = nearTail }
-    }
-    val conversationTailKey = conversation.lastOrNull()?.let { block ->
-        when (block) {
-            is ConversationBlock.Message -> "${block.id}:${block.text.length}"
-            is ConversationBlock.Reasoning -> "${block.id}:${block.text.length}"
-            is ConversationBlock.Tool -> "${block.id}:${block.progress.length}:${block.result?.length ?: 0}"
-            else -> "${block.id}:${block.complete}"
-        }
-    }
-    LaunchedEffect(state.selectedSessionId, conversationTailKey, state.runState) {
-        if (followConversationTail && conversationListState.layoutInfo.totalItemsCount > 0) {
-            conversationListState.animateScrollToItem(conversationListState.layoutInfo.totalItemsCount - 1)
-        }
-    }
-    val pulse = if (state.voiceCallActive) {
-        val transition = rememberInfiniteTransition(label = "voice-call-glow")
-        transition.animateFloat(
-            initialValue = .12f,
-            targetValue = .30f,
-            animationSpec = infiniteRepeatable(tween(1300), RepeatMode.Reverse),
-            label = "voice-call-alpha",
-        ).value
-    } else 0f
-    Box(
-        Modifier.fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        MaterialTheme.colorScheme.background,
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = .22f),
-                        MaterialTheme.colorScheme.background,
-                    ),
-                ),
-            )
-            .drawBehind {
-                if (state.voiceCallActive) drawRect(
-                    Brush.radialGradient(
-                        listOf(Color(0xFF42A5F5).copy(alpha = pulse), Color.Transparent),
-                        radius = size.maxDimension * .92f,
-                    ),
-                )
-            },
-    ) {
-      Column(Modifier.fillMaxSize().imePadding()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(sessionTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    "$projectName · ${state.provider.displayName}/${state.provider.defaultModel}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (selectedTaskBusy) {
-                Button(
-                    onClick = viewModel::stopAgent,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 7.dp),
-                ) {
-                    Icon(Icons.Default.Stop, null, Modifier.size(17.dp))
-                    Spacer(Modifier.width(5.dp))
-                        Text(
-                            if (state.runState == AgentRunState.WAITING_APPROVAL) "停止 · 审批中"
-                            else "停止",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                }
-            }
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .65f))
-        LazyColumn(
-            state = conversationListState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (state.events.isEmpty()) {
-                item {
-                    Column(
-                        Modifier.fillParentMaxHeight(.72f).fillMaxWidth(),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Surface(
-                            shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.size(64.dp),
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Terminal, null, modifier = Modifier.size(30.dp), tint = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                        Spacer(Modifier.height(16.dp))
-                        Text("从一个任务开始", style = MaterialTheme.typography.titleLarge)
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "描述目标，sai 会读取项目、修改文件并运行命令",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-            itemsIndexed(conversation, key = { index, block -> "conversation:$index:${block.id}" }) { _, block ->
-                ConversationBlockCard(block, state, viewModel, onUndoTurn = { undoTurnIndex = it })
-            }
-        }
-        UsageSummaryBar(state)
-        AgentComposerV2(
-            state = state,
-            viewModel = viewModel,
-            startVoiceInput = startVoiceInput,
-            finishVoiceInput = finishVoiceInput,
-            requestPhoneFiles = requestPhoneFiles,
-            taskBusy = taskBusy,
-            inputExpanded = composerExpanded,
-            onInputExpandedChange = { composerExpanded = it },
-        )
-      }
-      if (state.voiceCallActive) {
-          VoiceCallBanner(
-              phase = state.voiceCallPhase,
-              transcript = state.voiceCallTranscript,
-              modifier = Modifier.align(Alignment.TopCenter).padding(top = 66.dp, start = 46.dp, end = 46.dp),
-          )
-      }
-    }
-    undoTurnIndex?.let { selectedTurn ->
-        AlertDialog(
-            onDismissRequest = { undoTurnIndex = null },
-            icon = { Icon(Icons.Default.Undo, null) },
-            title = { Text("从这条消息开始撤回？") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("将撤回这条用户消息及其之后的全部思考、工具调用、回复和后续轮次。")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = restoreProjectOnUndo, onCheckedChange = { restoreProjectOnUndo = it })
-                        Text("同时恢复任务开始前的 Git 项目状态")
-                    }
-                    if (restoreProjectOnUndo) Text(
-                        "当前检查点位于本会话开始前；这会丢弃其后的文件修改和未提交文件。",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    undoTurnIndex = null
-                    viewModel.undoFromTurn(selectedTurn, restoreProjectOnUndo)
-                }) { Text("确认撤回") }
-            },
-            dismissButton = { TextButton(onClick = { undoTurnIndex = null }) { Text("取消") } },
-        )
     }
 }
 
@@ -3015,6 +2960,74 @@ private fun SoraEditor(text: String, onTextChange: (String) -> Unit, modifier: M
 }
 
 @Composable
+private fun TerminalScreenV3(state: MainUiState, viewModel: MainViewModel) {
+    val outputScroll = rememberScrollState()
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val cursor = state.terminalCursor.coerceIn(0, state.terminalCommand.length)
+    val fieldValue = TextFieldValue(state.terminalCommand, TextRange(cursor))
+    LaunchedEffect(state.terminalOutput.length) { outputScroll.scrollTo(outputScroll.maxValue) }
+    Column(Modifier.fillMaxSize().background(Color(0xFF07111F)).imePadding()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                if (state.terminalConnected) "PTY 已连接 · 点击终端即可输入" else "PTY 未连接",
+                color = if (state.terminalConnected) Color(0xFF5EEAD4) else Color(0xFFFCA5A5),
+                modifier = Modifier.weight(1f),
+            )
+            if (state.terminalConnected) {
+                OutlinedButton(onClick = viewModel::sendTerminalInterrupt, colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE2E8F0))) { Text("Ctrl-C") }
+                OutlinedButton(onClick = viewModel::closeTerminal, colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE2E8F0))) { Text("关闭") }
+            } else Button(onClick = viewModel::openTerminal) { Text("启动终端") }
+        }
+        Text(
+            state.terminalOutput.ifBlank {
+                "sai Debian terminal\n启动终端后，轻触画布即可输入。当前命令行支持光标定位、退格和实时 PTY 输入。\n"
+            },
+            color = Color(0xFFD1FAE5),
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(outputScroll).padding(12.dp)
+                .clickable(enabled = state.terminalConnected) {
+                    focusRequester.requestFocus()
+                    keyboard?.show()
+                },
+        )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("$ ", color = Color(0xFF5EEAD4), fontFamily = FontFamily.Monospace)
+            BasicTextField(
+                value = fieldValue,
+                onValueChange = { next -> viewModel.updateTerminalCommandRealtime(next.text, next.selection.end) },
+                modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                enabled = state.terminalConnected,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = Color(0xFFF8FAFC),
+                    fontFamily = FontFamily.Monospace,
+                ),
+                cursorBrush = SolidColor(Color(0xFF5EEAD4)),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { viewModel.submitTerminalInput() }),
+                decorationBox = { editor ->
+                    if (state.terminalCommand.isEmpty()) Text(
+                        "直接键入；回车执行",
+                        color = Color(0xFF7890A8),
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                    )
+                    editor()
+                },
+            )
+        }
+    }
+}
+
+@Composable
 private fun TerminalScreenV2(state: MainUiState, viewModel: MainViewModel) {
     val outputScroll = rememberScrollState()
     LaunchedEffect(state.terminalOutput.length) { outputScroll.scrollTo(outputScroll.maxValue) }
@@ -3239,7 +3252,7 @@ private fun BrowserScreen(state: MainUiState, viewModel: MainViewModel) {
 
 @Composable
 private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, requestExtensionZip: () -> Unit) {
-    val tabs = listOf("已安装", "发现", "MCP", "Skills", "插件", "Hooks", "诊断")
+    val tabs = listOf("已安装", "发现", "MCP", "Skills", "DSH 插件", "Hooks", "诊断")
     var tab by remember { mutableStateOf("发现") }
     var selectedCatalogItem by remember { mutableStateOf<CatalogExtension?>(null) }
     var catalogBrowserItem by remember { mutableStateOf<CatalogExtension?>(null) }
@@ -3260,6 +3273,96 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                item {
+                    Text(
+                        "随 sai 启用的 DSH 插件",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                items(
+                    listOf(
+                        Triple("sai-android", "Android 与 Agent 浏览器", "文件、终端、浏览器、通知及系统能力桥"),
+                        Triple("sai-artifacts", "文件与网址卡片", "打开、预览、保存、分享和导出"),
+                        Triple("sai-models", "多提供商模型", "模型发现、推理档位、会话绑定与计费"),
+                        Triple("sai-vision", "辅助识图", "纯文本模型自动路由到优先视觉模型"),
+                        Triple("sai-voice", "离线语音", "语音输入、连续通话、打断与朗读工具"),
+                        Triple("sai-request-guard", "请求保护", "并发队列、冷却、限流与熔断"),
+                        Triple("sai-market", "扩展市场", "MCP、Skills 与 DSH 插件发现和预检"),
+                        Triple("sai-pet", "任务宠物", "任务、审批和语音状态联动"),
+                        Triple("sai-ui", "移动会话界面", "紧凑输入、工具折叠与移动端布局"),
+                    ),
+                    key = { "builtin:${it.first}" },
+                ) { (id, title, summary) ->
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Default.Extension, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(title, fontWeight = FontWeight.Bold)
+                                Text(id, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            AssistChip(onClick = {}, label = { Text("内置 · 已启用") })
+                        }
+                    }
+                }
+                item {
+                    Text(
+                        "预装的 DeepSeek 优化 Preset",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+                items(state.bundledDshPresets, key = { "preset:${it.id}" }) { preset ->
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(preset.name, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        "DSH Preset · ${preset.version} · 实验性",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                                FilterChip(
+                                    selected = preset.installed,
+                                    onClick = { viewModel.toggleBundledDshPreset(preset) },
+                                    label = { Text(if (preset.installed) "已安装" else "已卸载") },
+                                )
+                            }
+                            Text(preset.description, style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                preset.sourceUrl,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "固定提交 ${preset.sourceCommit.take(8)} · 不会自动改写现有会话模式",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            TextButton(onClick = { viewModel.toggleBundledDshPreset(preset) }) {
+                                Text(if (preset.installed) "卸载 Preset" else "重新安装")
+                            }
+                        }
+                    }
+                }
+                item {
+                    Text(
+                        "用户安装的扩展",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 if (state.installedExtensions.isEmpty()) item { ExtensionCard("尚未安装扩展", "可在“发现”中搜索，或在 MCP/Skills 标签中添加自定义来源。") }
                 items(state.installedExtensions, key = { it.id }) { extension ->
                     ElevatedCard(Modifier.fillMaxWidth()) {
@@ -3290,7 +3393,7 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                             if (value.isBlank()) viewModel.loadExtensionRecommendations()
                         },
                         modifier = Modifier.weight(1f),
-                        label = { CompactFieldLabel("搜索 MCP Registry 与 skills.sh") },
+                        label = { CompactFieldLabel("搜索 MCP、Skills 与 DSH 插件") },
                         singleLine = true,
                     )
                     Spacer(Modifier.width(8.dp))
@@ -3306,7 +3409,7 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                 ) {
                     Text(state.extensionFeedTitle, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     if (state.extensionQuery.isBlank()) Text(
-                        "按热度排序 · skills.sh 公开榜单",
+                        "GitHub 实时搜索 · skills.sh 热榜 · 失败时使用缓存",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -3325,7 +3428,13 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                                 }
                                 if (extension.description.isNotBlank()) Text(extension.description, maxLines = 3, overflow = TextOverflow.Ellipsis)
                                 Text(
-                                    listOfNotNull(extension.source, extension.version.takeIf(String::isNotBlank), extension.installs?.let { "$it 次安装" }).joinToString(" · "),
+                                    listOfNotNull(
+                                        extension.source,
+                                        extension.version.takeIf(String::isNotBlank),
+                                        extension.installs
+                                            ?.takeUnless { extension.source.startsWith("sai 预装") }
+                                            ?.let { "$it 次安装" },
+                                    ).joinToString(" · "),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -3336,10 +3445,31 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
             }
             "MCP" -> McpConfigurationPane(state, viewModel, onInspect = { selectedCatalogItem = it })
             "Skills" -> ExtensionImportPane(state, ExtensionKind.SKILL, "导入 Skill", requestExtensionZip) { selectedCatalogItem = it }
-            "插件" -> ExtensionImportPane(state, ExtensionKind.PLUGIN, "导入插件", requestExtensionZip) { selectedCatalogItem = it }
+            "DSH 插件" -> ExtensionImportPane(state, ExtensionKind.PLUGIN, "导入 DSH 插件", requestExtensionZip) { selectedCatalogItem = it }
             "Hooks" -> HookConfigurationPane(state, viewModel)
             else -> ExtensionDiagnosticsPane(state)
         }
+    }
+    if (state.extensionPreflightRunning) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("DSH 插件安装预检") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { state.extensionPreflightProgress.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(state.extensionPreflightStage ?: "正在预检…")
+                    Text(
+                        "正在实时读取仓库清单、验证 DSH 入口、扫描权限并计算摘要。此过程不会执行第三方安装脚本。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {},
+        )
     }
     state.extensionPlan?.let { plan ->
         AlertDialog(
@@ -3380,8 +3510,8 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                 }) { Text("安装预检") }
                 else if (extension.kind == ExtensionKind.PLUGIN) Button(onClick = {
                     selectedCatalogItem = null
-                    requestExtensionZip()
-                }) { Text("导入 ZIP") }
+                    viewModel.inspectExtension(extension)
+                }) { Text("DSH 安装预检") }
             },
             dismissButton = {
                 Row {
@@ -3479,7 +3609,7 @@ private fun ExtensionImportPane(
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(if (kind == ExtensionKind.SKILL) "选择含 SKILL.md 的 ZIP；安装前展示文件、摘要和权限。" else "选择 Codex、Claude 或 Reasonix 插件 ZIP；安装完成后默认禁用。")
+                    Text(if (kind == ExtensionKind.SKILL) "选择含 SKILL.md 的 ZIP；启用后同步到 DSH 原生 Skill 注册表。" else "仅接受含 DSH bundle/Cordis patch 和预构建 JavaScript 的 ZIP；旧 Codex、Claude、Reasonix 插件不再接纳。")
                     Button(onClick = requestExtensionZip, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.CloudDownload, null)
                         Spacer(Modifier.width(8.dp))
@@ -3489,7 +3619,7 @@ private fun ExtensionImportPane(
             }
         }
         item { ExtensionCard("安全规则", "阻止路径穿越、符号链接和 Git 元数据；脚本不会自动执行，安装完成后默认禁用。") }
-        item { Text(if (kind == ExtensionKind.SKILL) "推荐 Skills" else "推荐插件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+        item { Text(if (kind == ExtensionKind.SKILL) "推荐 Skills" else "推荐 DSH 插件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         if (recommendations.isEmpty()) item { Text("推荐目录正在加载，可稍后刷新“发现”。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(recommendations, key = { "${it.kind}:${it.id}" }) { item -> CatalogRecommendationCard(item) { onInspect(item) } }
     }
@@ -3638,11 +3768,43 @@ private fun CompactFieldLabel(text: String) {
 }
 
 @Composable
+private fun GitHubAvatar(url: String?, login: String) {
+    val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(initialValue = null, url) {
+        value = if (url.isNullOrBlank() || !url.startsWith("https://avatars.githubusercontent.com/")) null else {
+            withContext(Dispatchers.IO) {
+                runCatching { URL(url).openStream().buffered().use { BitmapFactory.decodeStream(it) }?.asImageBitmap() }
+                    .getOrNull()
+            }
+        }
+    }
+    Surface(
+        modifier = Modifier.size(52.dp).clip(CircleShape),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        if (bitmap != null) {
+            Image(bitmap = bitmap!!, contentDescription = "$login 的 GitHub 头像", contentScale = ContentScale.Crop)
+        } else {
+            Box(contentAlignment = Alignment.Center) {
+                Text(login.take(1).uppercase(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
 private fun ExtensionCard(title: String, body: String) {
     Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(body, Modifier.padding(top = 6.dp)) } }
 }
 
 private data class SettingsCategoryEntry(val id: String, val title: String, val detail: String, val icon: ImageVector)
+private data class SettingsDetailEntry(
+    val id: String,
+    val categoryId: String,
+    val title: String,
+    val detail: String,
+    val icon: ImageVector,
+)
 
 @Composable
 private fun SettingsHub(
@@ -3651,8 +3813,10 @@ private fun SettingsHub(
     requestExternalDirectory: () -> Unit,
     requestAllFilesAccess: () -> Unit,
     scanDesktopPairing: () -> Unit,
+    toggleVoiceCall: () -> Unit,
 ) {
     var page by remember { mutableStateOf<String?>(null) }
+    var detailPage by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
     val categories = listOf(
         SettingsCategoryEntry("appearance", "外观与宠物", "软件主题颜色、界面宠物和悬浮方式", Icons.Default.SmartToy),
@@ -3660,8 +3824,24 @@ private fun SettingsHub(
         SettingsCategoryEntry("models", "模型与推理", "提供商、API Key、模型、识图和思考强度", Icons.Default.Hub),
         SettingsCategoryEntry("runtime", "本地开发环境", "Debian、Git、Python 与可选工具链", Icons.Default.Terminal),
         SettingsCategoryEntry("files", "文件与电脑连接", "外部文件授权、桌面配对和诊断", Icons.Default.Folder),
+        SettingsCategoryEntry("accounts", "账户", "GitHub 登录与请求限额", Icons.Default.AccountCircle),
     )
-    if (page == null) {
+    val details = listOf(
+        SettingsDetailEntry("appearance/theme", "appearance", "软件主题", "全局配色和显示风格", Icons.Default.Palette),
+        SettingsDetailEntry("appearance/pet", "appearance", "任务宠物", "应用内与系统悬浮行为", Icons.Default.SmartToy),
+        SettingsDetailEntry("voice/input", "voice", "语音输入", "点按或长按、实时离线字幕", Icons.Default.Mic),
+        SettingsDetailEntry("voice/call", "voice", "语音通话", "连续监听、朗读与打断", Icons.Default.RecordVoiceOver),
+        SettingsDetailEntry("voice/pack", "voice", "Voice Pack", "安装或卸载离线模型", Icons.Default.Download),
+        SettingsDetailEntry("models/providers", "models", "模型提供商", "API、密钥和模型发现", Icons.Default.Hub),
+        SettingsDetailEntry("models/routing", "models", "模型与识图", "推理档位和辅助视觉", Icons.Default.Psychology),
+        SettingsDetailEntry("runtime/debian", "runtime", "Debian 与 DSH", "本地运行时状态和自检", Icons.Default.Memory),
+        SettingsDetailEntry("runtime/toolchains", "runtime", "开发工具链", "安装、卸载与实时进度", Icons.Default.Code),
+        SettingsDetailEntry("files/access", "files", "文件访问", "外部目录权限和项目导出", Icons.Default.Folder),
+        SettingsDetailEntry("files/desktop", "files", "电脑连接", "局域网扫码配对", Icons.Default.Devices),
+        SettingsDetailEntry("files/diagnostics", "files", "诊断与验收", "Agent 全链路测试", Icons.Default.CheckCircle),
+        SettingsDetailEntry("accounts/github", "accounts", "GitHub", "gh 登录、状态与限额", Icons.Default.AccountCircle),
+    )
+    if (page == null && detailPage == null) {
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp),
@@ -3679,7 +3859,11 @@ private fun SettingsHub(
                     label = { CompactFieldLabel("搜索设置项") },
                 )
             }
-            val filtered = categories.filter { query.isBlank() || it.title.contains(query, true) || it.detail.contains(query, true) }
+            val matchingDetails = details.filter { query.isNotBlank() && (it.title.contains(query, true) || it.detail.contains(query, true)) }
+            val filtered = categories.filter { category ->
+                query.isBlank() || category.title.contains(query, true) || category.detail.contains(query, true) ||
+                    matchingDetails.any { it.categoryId == category.id }
+            }
             items(filtered, key = { it.id }) { category ->
                 ElevatedCard(Modifier.fillMaxWidth().clickable { page = category.id }) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -3695,20 +3879,99 @@ private fun SettingsHub(
                     }
                 }
             }
+            if (query.isNotBlank()) items(matchingDetails, key = { "search-${it.id}" }) { detail ->
+                OutlinedCard(Modifier.fillMaxWidth().clickable { page = detail.categoryId; detailPage = detail.id }) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(detail.icon, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(detail.title)
+                            Text(detail.detail, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
             if (filtered.isEmpty()) item { Text("没有匹配的设置项", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        return
+    }
+    if (detailPage == null) {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { page = null }) { Icon(Icons.Default.ArrowBack, "返回设置") }
+                Text(categories.firstOrNull { it.id == page }?.title.orEmpty(), style = MaterialTheme.typography.titleLarge)
+            }
+            HorizontalDivider()
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(details.filter { it.categoryId == page }, key = { it.id }) { detail ->
+                    ElevatedCard(Modifier.fillMaxWidth().clickable { detailPage = detail.id }) {
+                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(detail.icon, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(detail.title, style = MaterialTheme.typography.titleMedium)
+                                Text(detail.detail, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Icon(Icons.Default.ArrowBack, null, Modifier.graphicsLayer(rotationZ = 180f))
+                        }
+                    }
+                }
+            }
         }
         return
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { page = null }) { Icon(Icons.Default.ArrowBack, "返回设置") }
-            Text(categories.firstOrNull { it.id == page }?.title.orEmpty(), style = MaterialTheme.typography.titleLarge)
+            IconButton(onClick = { detailPage = null }) { Icon(Icons.Default.ArrowBack, "返回上一级") }
+            Text(details.firstOrNull { it.id == detailPage }?.title.orEmpty(), style = MaterialTheme.typography.titleLarge)
         }
         HorizontalDivider()
-        when (page) {
-            "appearance", "voice" -> AppearanceAndVoiceSettings(state, viewModel, showAppearance = page == "appearance")
-            else -> SettingsScreen(state, viewModel, requestExternalDirectory, requestAllFilesAccess, scanDesktopPairing)
+        when (detailPage) {
+            "appearance/theme" -> AppearanceAndVoiceSettings(state, viewModel, showAppearance = true)
+            "voice/input", "voice/pack" -> AppearanceAndVoiceSettings(state, viewModel, showAppearance = false)
+            "voice/call" -> VoiceCallSettings(state, toggleVoiceCall)
+            else -> SettingsScreen(state, viewModel, requestExternalDirectory, requestAllFilesAccess, scanDesktopPairing, detailPage.orEmpty())
         }
+    }
+}
+
+@Composable
+private fun VoiceCallSettings(state: MainUiState, toggleVoiceCall: () -> Unit) {
+    val phase = when (state.voiceCallPhase) {
+        VoiceCallPhase.IDLE -> "尚未开始"
+        VoiceCallPhase.LISTENING -> "正在聆听"
+        VoiceCallPhase.THINKING -> "等待 Agent"
+        VoiceCallPhase.SPEAKING -> "AI 正在广播，同时保持监听"
+        VoiceCallPhase.ERROR -> "语音通话发生错误"
+    }
+    Column(
+        Modifier.fillMaxSize().padding(18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Icon(Icons.Default.RecordVoiceOver, null, Modifier.size(58.dp), tint = MaterialTheme.colorScheme.primary)
+        Text("连续语音通话", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(phase, color = if (state.voiceCallPhase == VoiceCallPhase.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+        if (state.voiceCallTranscript.isNotBlank() && state.voiceCallPhase == VoiceCallPhase.LISTENING) {
+            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer) {
+                Text(state.voiceCallTranscript, Modifier.fillMaxWidth().padding(16.dp), textAlign = TextAlign.Center)
+            }
+        }
+        Button(
+            onClick = toggleVoiceCall,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+            colors = if (state.voiceCallActive) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            else ButtonDefaults.buttonColors(),
+        ) {
+            Icon(if (state.voiceCallActive) Icons.Default.Stop else Icons.Default.Mic, null, Modifier.size(26.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(if (state.voiceCallActive) "结束语音通话" else "开始语音通话", style = MaterialTheme.typography.titleMedium)
+        }
+        Text("Voice Pack 完全离线。模型只朗读主动调用 speak 工具提交的简短内容；朗读时仍监听用户插话。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -3812,6 +4075,7 @@ private fun SettingsScreen(
     requestExternalDirectory: () -> Unit,
     requestAllFilesAccess: () -> Unit,
     scanDesktopPairing: () -> Unit,
+    section: String,
 ) {
     val context = LocalContext.current
     var providerTemplateOpen by remember { mutableStateOf(false) }
@@ -3820,6 +4084,7 @@ private fun SettingsScreen(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        if (section == "models/providers") {
         item { SettingsSectionTitle(Icons.Default.Hub, "模型与推理", "连接服务商、选择在线模型并控制思考强度") }
         item {
             ElevatedCard(Modifier.fillMaxWidth()) {
@@ -3900,9 +4165,13 @@ private fun SettingsScreen(
                 }
             }
         }
+        }
+        if (section == "models/routing") {
         item {
             ModelAndReasoningCard(state, viewModel)
         }
+        }
+        if (section == "appearance/pet") {
         item {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -3954,6 +4223,8 @@ private fun SettingsScreen(
                 }
             }
         }
+        }
+        if (section == "runtime/debian") {
         item { SettingsSectionTitle(Icons.Default.Memory, "本地开发环境", "Debian 13 · PRoot · 私有工作区") }
         item {
             ElevatedCard(Modifier.fillMaxWidth()) {
@@ -4019,6 +4290,17 @@ private fun SettingsScreen(
                 }
             }
         }
+        }
+        if (section == "accounts/github") {
+        item {
+            LaunchedEffect(state.githubDeviceCode) {
+                if (!state.githubDeviceCode.isNullOrBlank()) {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/login/device")))
+                    }
+                }
+            }
+        }
         item {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -4041,18 +4323,26 @@ private fun SettingsScreen(
                         }
                     }
                     state.githubCliStatus.login?.let { login ->
-                        Text("已登录 @$login。令牌由 Android Keystore 加密，不写入 Debian 配置。")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            GitHubAvatar(state.githubCliStatus.avatarUrl, login)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text("@$login", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text("已登录 · 凭据由 Android Keystore 加密", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                         OutlinedButton(onClick = viewModel::logoutGitHub, modifier = Modifier.fillMaxWidth(), enabled = !state.githubCliBusy) {
                             Text("退出 GitHub")
                         }
                     } ?: run {
                         Button(
                             onClick = viewModel::loginGitHubWithDevice,
-                            enabled = state.githubCliStatus.installed && !state.githubCliBusy,
+                            enabled = !state.githubCliBusy,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text(if (state.githubCliBusy) "等待 GitHub 授权…" else "使用浏览器设备登录") }
+                        ) { Text(if (state.githubCliBusy) "等待 GitHub 授权…" else "浏览器网页登录（推荐）") }
                         state.githubDeviceCode?.let { code ->
                             Text("设备码：$code", style = MaterialTheme.typography.titleMedium)
+                            Text("浏览器已打开 GitHub 授权页。输入上方设备码并确认后，sai 会自动完成登录。", style = MaterialTheme.typography.bodySmall)
                             OutlinedButton(
                                 onClick = {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/login/device")))
@@ -4071,7 +4361,7 @@ private fun SettingsScreen(
                         )
                         Button(
                             onClick = viewModel::loginGitHub,
-                            enabled = state.githubCliStatus.installed && state.githubTokenInput.isNotBlank() && !state.githubCliBusy,
+                            enabled = state.githubTokenInput.isNotBlank() && !state.githubCliBusy,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("使用 Token 登录（高级）") }
                     }
@@ -4083,6 +4373,8 @@ private fun SettingsScreen(
                 }
             }
         }
+        }
+        if (section == "runtime/toolchains") {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("开发工具链", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
@@ -4165,6 +4457,8 @@ private fun SettingsScreen(
                 }
             }
         }
+        }
+        if (section == "files/access") {
         item { SettingsSectionTitle(Icons.Default.Folder, "文件访问", "内部工作区优先，外部目录按需授权") }
         item {
             ElevatedCard(Modifier.fillMaxWidth()) {
@@ -4178,6 +4472,8 @@ private fun SettingsScreen(
                 }
             }
         }
+        }
+        if (section == "files/desktop") {
         item { SettingsSectionTitle(Icons.Default.Hub, "电脑连接", "局域网扫码配对；文件操作与基础对话端到端加密") }
         item {
             ElevatedCard(Modifier.fillMaxWidth()) {
@@ -4206,6 +4502,8 @@ private fun SettingsScreen(
                 }
             }
         }
+        }
+        if (section == "files/diagnostics") {
         item { SettingsSectionTitle(Icons.Default.CheckCircle, "Agent 全链路验收", "使用当前 API Key 测试多文件、Python、Git 和 Agent 浏览器") }
         item {
             ElevatedCard(Modifier.fillMaxWidth()) {
@@ -4223,6 +4521,7 @@ private fun SettingsScreen(
                     }
                 }
             }
+        }
         }
         item { Spacer(Modifier.height(8.dp)) }
     }

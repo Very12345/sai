@@ -30,7 +30,7 @@ class AgentForegroundService : Service() {
                 if (!dshMode) return@collectLatest
                 when (dsh.phase) {
                     DshRuntimePhase.INSTALLING, DshRuntimePhase.STARTING, DshRuntimePhase.READY ->
-                        startForeground(NOTIFICATION_ID, notification("sai · DeepSeek Harness", dsh.detail))
+                        startForeground(NOTIFICATION_ID, notification("sai Agent", dsh.detail))
                     DshRuntimePhase.FAILED ->
                         startForeground(NOTIFICATION_ID, notification("sai · DSH 需要处理", dsh.detail))
                     else -> Unit
@@ -47,7 +47,7 @@ class AgentForegroundService : Service() {
                     if (waiting > 0) append(" · $waiting 个等待审批")
                     latest?.detail?.takeIf(String::isNotBlank)?.let { append(" · ").append(it) }
                 }
-                startForeground(NOTIFICATION_ID, notification("sai · DeepSeek Harness", summary))
+                startForeground(NOTIFICATION_ID, notification("sai Agent", summary))
             }
         }
     }
@@ -80,7 +80,7 @@ class AgentForegroundService : Service() {
         startForeground(
             NOTIFICATION_ID,
             notification(
-                if (desktopConnectionMode && !dshMode) "sai 电脑已连接" else "sai · DeepSeek Harness",
+                if (desktopConnectionMode && !dshMode) "sai 电脑已连接" else "sai Agent",
                 if (desktopConnectionMode && !dshMode) "加密局域网文件与对话连接正在运行"
                 else "任务会在离开界面后继续；点击查看进度",
             ),

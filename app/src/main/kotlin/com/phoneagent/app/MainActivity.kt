@@ -22,7 +22,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.phoneagent.agent.AgentRunState
 import com.phoneagent.app.ui.PhoneAgentApp
 import com.phoneagent.app.ui.PhoneAgentTheme
 import com.phoneagent.app.device.DeviceControlAuthorization
@@ -105,9 +104,10 @@ class MainActivity : ComponentActivity() {
     private var voiceTimerJob: Job? = null
     private var voiceStartedAt = 0L
     @Volatile private var lastPartialAt = 0L
+    private var lastVoiceInputResultSequence = 0L
     private val microphonePermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted && requestedSpeechMode == SpeechMode.CALL) startVoiceConversationService()
-        else if (granted) startSpeechRecognition(requestedSpeechMode)
+        else if (granted) startVoiceInputService()
         else {
             if (requestedSpeechMode == SpeechMode.CALL) viewModel.endVoiceCall()
             viewModel.showMessage("麦克风权限被拒绝，无法使用语音")
@@ -153,13 +153,19 @@ class MainActivity : ComponentActivity() {
                         }
                     },
                     startVoiceInput = {
-                        beginVoiceTimer()
                         requestedSpeechMode = SpeechMode.INPUT
                         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                            startSpeechRecognition(SpeechMode.INPUT)
+                            startVoiceInputService()
                         } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
                     },
-                    finishVoiceInput = { send -> finishPressToTalk(send) },
+                    finishVoiceInput = { send ->
+                        ContextCompat.startForegroundService(
+                            this,
+                            Intent(this, VoiceConversationService::class.java).setAction(
+                                if (send) VoiceConversationService.ACTION_INPUT_TOGGLE else VoiceConversationService.ACTION_INPUT_CANCEL,
+                            ),
+                        )
+                    },
                     toggleVoiceCall = { toggleVoiceCall() },
                     openAccessibilitySettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
                     authorizeDeviceControl = { packageName ->
@@ -183,37 +189,18 @@ class MainActivity : ComponentActivity() {
             }
         }
         lifecycleScope.launch {
-            viewModel.ui.collectLatest { state ->
-                if (VoiceConversationController.state.value.active) return@collectLatest
-                if (!state.voiceCallActive) return@collectLatest
-                val activeTurnId = state.activeVoiceTurnId ?: return@collectLatest
-                state.events.filterIsInstance<com.phoneagent.agent.AgentEvent.SpeechRequested>()
-                    .lastOrNull { it.voiceTurnId == activeTurnId }?.let { speech ->
-                    if (speech.id != lastSpeechRequestId) {
-                        lastSpeechRequestId = speech.id
-                        callResponsePending = false
-                        speakVoiceCallResponse(speech.text, activeTurnId)
-                        return@collectLatest
-                    }
-                }
-                if (!callResponsePending) return@collectLatest
-                when (state.runState) {
-                    AgentRunState.COMPLETED -> {
-                        callResponsePending = false
-                        restartVoiceCallListening()
-                    }
-                    AgentRunState.FAILED, AgentRunState.CANCELLED -> {
-                        callResponsePending = false
-                        viewModel.failVoiceCall("本轮未完成，正在重新聆听")
-                        delay(900)
-                        restartVoiceCallListening()
-                    }
-                    else -> Unit
+            VoiceConversationController.state.collectLatest { voiceState ->
+                viewModel.syncVoiceConversation(voiceState)
+                if (
+                    voiceState.kind == VoiceConversationKind.INPUT &&
+                    voiceState.resultSequence > lastVoiceInputResultSequence &&
+                    voiceState.resultText.isNotBlank()
+                ) {
+                    lastVoiceInputResultSequence = voiceState.resultSequence
+                    viewModel.setPrompt(voiceState.resultText)
+                    viewModel.startAgent()
                 }
             }
-        }
-        lifecycleScope.launch {
-            VoiceConversationController.state.collectLatest(viewModel::syncVoiceConversation)
         }
         handleLaunchIntent(intent)
     }
@@ -251,6 +238,17 @@ class MainActivity : ComponentActivity() {
                 delay(100)
             }
         }
+    }
+
+    private fun startVoiceInputService() {
+        val state = viewModel.ui.value
+        ContextCompat.startForegroundService(
+            this,
+            Intent(this, VoiceConversationService::class.java)
+                .setAction(VoiceConversationService.ACTION_INPUT_TOGGLE)
+                .putExtra(VoiceConversationService.EXTRA_SESSION_ID, state.selectedSessionId)
+                .putExtra(VoiceConversationService.EXTRA_WORKSPACE_ID, state.selectedWorkspaceId),
+        )
     }
 
     private fun finishPressToTalk(send: Boolean) {

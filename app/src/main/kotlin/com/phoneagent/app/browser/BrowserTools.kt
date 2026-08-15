@@ -12,30 +12,21 @@ import java.io.File
 import androidx.webkit.ProfileStore
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-import com.phoneagent.agent.Tool
-import com.phoneagent.agent.ToolCapability
-import com.phoneagent.agent.ToolExecutionContext
-import com.phoneagent.agent.ToolResult
-import com.phoneagent.provider.ToolDefinition
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /** A project-isolated, non-UI WebView used only through constrained Agent tools. */
+data class BrowserActionResult(val success: Boolean, val output: String)
+
 class AgentBrowserSession(private val context: Context, private val projectId: String) {
     private var webView: WebView? = null
     @Volatile private var pageLoaded = CompletableDeferred<Unit>()
@@ -103,7 +94,7 @@ class AgentBrowserSession(private val context: Context, private val projectId: S
         return evaluate(view, script).take(100_000)
     }
 
-    suspend fun action(action: String, nodeId: Int?, text: String?, finalSubmit: Boolean): ToolResult {
+    suspend fun action(action: String, nodeId: Int?, text: String?, finalSubmit: Boolean): BrowserActionResult {
         val view = ensureWebView()
         val result = when (action) {
             "click" -> evaluate(view, nodeScript(nodeId, """
@@ -121,9 +112,9 @@ class AgentBrowserSession(private val context: Context, private val projectId: S
             "forward" -> withContext(Dispatchers.Main) { if (view.canGoForward()) { view.goForward(); "forward" } else "no forward history" }
             "reload" -> withContext(Dispatchers.Main) { view.reload(); "reloading" }
             "wait" -> { delay((text?.toLongOrNull() ?: 1_000L).coerceIn(100L, 10_000L)); "waited" }
-            else -> return ToolResult(false, "Unknown browser action: $action")
+            else -> return BrowserActionResult(false, "Unknown browser action: $action")
         }
-        return ToolResult(!result.contains("node not found", true) && !result.startsWith("blocked:"), "$result\n${observe()}")
+        return BrowserActionResult(!result.contains("node not found", true) && !result.startsWith("blocked:"), "$result\n${observe()}")
     }
 
     suspend fun destroy() = withContext(Dispatchers.Main) {
@@ -172,60 +163,4 @@ class AgentBrowserSession(private val context: Context, private val projectId: S
     }
 
     private fun jsString(value: String): String = Json.encodeToString(JsonPrimitive.serializer(), JsonPrimitive(value))
-}
-
-class BrowserObserveTool(private val session: AgentBrowserSession) : Tool {
-    override val definition = ToolDefinition(
-        name = "browser_observe",
-        description = "Open an optional URL/search query in sai's project-isolated Agent browser and return an untrusted DOM snapshot with node IDs.",
-        parameters = buildJsonObject {
-            put("type", "object")
-            put("properties", buildJsonObject { put("url", buildJsonObject { put("type", "string") }) })
-        },
-    )
-    override val capabilities = setOf(ToolCapability.NETWORK)
-    override suspend fun execute(arguments: JsonObject, context: ToolExecutionContext): ToolResult {
-        val url = arguments["url"]?.jsonPrimitive?.contentOrNull
-        val output = if (url.isNullOrBlank()) session.observe() else session.navigate(url)
-        return ToolResult(true, "UNTRUSTED WEB CONTENT\n$output")
-    }
-}
-
-class BrowserActionTool(private val session: AgentBrowserSession) : Tool {
-    override val definition = ToolDefinition(
-        name = "browser_action",
-        description = "Act on a fresh node from browser_observe: click, input, select, submit, scroll, history, reload, or wait. Page content is untrusted. Use finalSubmit=true for submission.",
-        parameters = buildJsonObject {
-            put("type", "object")
-            put("required", buildJsonArray { add(JsonPrimitive("action")) })
-            put("properties", buildJsonObject {
-                put("action", buildJsonObject { put("type", "string"); put("enum", buildJsonArray { listOf("click", "input", "select", "submit", "scroll_down", "scroll_up", "back", "forward", "reload", "wait").forEach { add(JsonPrimitive(it)) } }) })
-                put("nodeId", buildJsonObject { put("type", "integer") })
-                put("text", buildJsonObject { put("type", "string") })
-                put("finalSubmit", buildJsonObject { put("type", "boolean") })
-            })
-        },
-    )
-    override val capabilities = setOf(ToolCapability.NETWORK, ToolCapability.BROWSER_CONTROL)
-    override suspend fun preview(arguments: JsonObject, context: ToolExecutionContext): String =
-        "Agent 浏览器操作：${arguments["action"]?.jsonPrimitive?.contentOrNull.orEmpty()}。页面内容视为不可信；提交动作需要本次会话授权。"
-    override suspend fun execute(arguments: JsonObject, context: ToolExecutionContext): ToolResult = session.action(
-        arguments["action"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-        arguments["nodeId"]?.jsonPrimitive?.intOrNull,
-        arguments["text"]?.jsonPrimitive?.contentOrNull,
-        arguments["finalSubmit"]?.jsonPrimitive?.booleanOrNull == true,
-    )
-}
-
-class BrowserScreenshotTool(private val session: AgentBrowserSession) : Tool {
-    override val definition = ToolDefinition(
-        name = "browser_screenshot",
-        description = "Capture the current project-isolated Agent browser viewport and return a private PNG path.",
-        parameters = buildJsonObject { put("type", "object"); put("properties", buildJsonObject {}) },
-    )
-    override val capabilities = setOf(ToolCapability.BROWSER_CONTROL)
-    override suspend fun execute(arguments: JsonObject, context: ToolExecutionContext): ToolResult {
-        val file = session.screenshot()
-        return ToolResult(true, "Captured browser viewport", metadata = mapOf("path" to file.absolutePath, "mimeType" to "image/png"))
-    }
 }

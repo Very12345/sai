@@ -12,9 +12,12 @@ android {
         applicationId = "com.phoneagent.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 12_001
-        versionName = "1.2.0-dsh-preview.2"
-        val githubRepository = providers.gradleProperty("saiGithubRepository").orNull.orEmpty()
+        versionCode = 12_002
+        versionName = "1.2.0-dsh-preview.3"
+        // Local/device builds must be able to find optional release modules too.
+        // CI may override this for forks with -PsaiGithubRepository=owner/repo.
+        val githubRepository = providers.gradleProperty("saiGithubRepository").orNull
+            ?.takeIf(String::isNotBlank) ?: "Very12345/sai"
         buildConfigField("String", "GITHUB_REPOSITORY", "\"$githubRepository\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -79,7 +82,6 @@ android {
 }
 
 dependencies {
-    implementation(project(":core:agent"))
     implementation(project(":core:provider"))
     implementation(project(":core:runtime"))
     implementation(project(":core:data"))

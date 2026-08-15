@@ -9,6 +9,7 @@ data class DshRuntimeManifest(
     val dshVersion: String,
     val nodeVersion: String,
     val sourceCommit: String,
+    val sourceRepository: String = "https://github.com/deepseek-ai/deepseek-harness",
     val packageLockSha256: Map<String, String> = emptyMap(),
     val port: Int = 3080,
     val archives: Map<String, DshArchive> = emptyMap(),

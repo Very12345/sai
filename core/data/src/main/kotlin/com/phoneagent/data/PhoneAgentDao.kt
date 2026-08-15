@@ -194,6 +194,9 @@ interface PhoneAgentDao {
     @Query("SELECT * FROM mcp_servers ORDER BY displayName")
     fun observeMcpServers(): Flow<List<McpServerEntity>>
 
+    @Query("SELECT * FROM mcp_servers ORDER BY displayName")
+    suspend fun mcpServers(): List<McpServerEntity>
+
     @Query("DELETE FROM mcp_servers WHERE id = :serverId")
     suspend fun deleteMcpServer(serverId: String)
 

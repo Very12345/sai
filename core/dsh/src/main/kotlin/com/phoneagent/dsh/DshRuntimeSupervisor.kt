@@ -41,7 +41,12 @@ class DshRuntimeSupervisor(
 
     fun ensureStarted() {
         if (!requested.compareAndSet(false, true)) return
-        scope.launch { startLocked() }
+        scope.launch {
+            runCatching { startLocked() }.onFailure { error ->
+                requested.set(false)
+                _state.value = DshRuntimeState(DshRuntimePhase.FAILED, error.message ?: "DSH failed to start")
+            }
+        }
     }
 
     suspend fun awaitReady(timeoutMillis: Long = 30_000): DshRuntimeState = withTimeout(timeoutMillis) {
@@ -64,7 +69,7 @@ class DshRuntimeSupervisor(
         requested.set(true)
         _state.value = DshRuntimeState(
             DshRuntimePhase.STARTING,
-            "Starting rolled back DeepSeek Harness",
+            "正在启动上一代 sai Agent",
             runtimeVersion = version,
         )
         startProcess()
@@ -107,23 +112,23 @@ class DshRuntimeSupervisor(
     private suspend fun startProcess() {
         prepareConfiguration()
         val manifest = provisioner.manifest
-        val node = File(provisioner.current, "node/bin/node").absolutePath.shellQuote()
-        val launcher = File(provisioner.current, "app/sai-dsh-launcher.mjs").absolutePath.shellQuote()
-        val command = "exec $node $launcher"
+        val node = "/opt/sai-dsh/node/bin/node".shellQuote()
+        val launcher = "/opt/sai-dsh/app/sai-dsh-launcher.mjs".shellQuote()
+        val command = "exec $node --expose-internals $launcher"
         val bridge = bridgeEndpoint()
         val accessToken = ByteArray(32).also(SecureRandom()::nextBytes).let {
             Base64.getUrlEncoder().withoutPadding().encodeToString(it).also { _ -> it.fill(0) }
         }
         webToken = accessToken
         val activeVersion = provisioner.activeRuntimeVersion ?: manifest.runtimeVersion
-        _state.value = DshRuntimeState(DshRuntimePhase.STARTING, "Starting DeepSeek Harness", runtimeVersion = activeVersion)
+        _state.value = DshRuntimeState(DshRuntimePhase.STARTING, "正在启动 sai Agent", runtimeVersion = activeVersion)
         job = runtime.startJob(
             RunRequest(
                 command = command,
                 workingDirectory = "/home/phoneagent",
                 workspaceHostPath = workspace.absolutePath,
                 environment = mapOf(
-                    "DSH_HOME" to provisioner.home.absolutePath,
+                    "DSH_HOME" to "/var/lib/sai-dsh",
                     "DSH_TELEMETRY_DISABLED" to "1",
                     "DSH_PERMISSION_MODE" to "workspace-write",
                     "NODE_ENV" to "production",
@@ -136,6 +141,10 @@ class DshRuntimeSupervisor(
                 ),
                 timeoutMillis = Long.MAX_VALUE,
                 outputLimitBytes = 512 * 1024,
+                trustedBinds = mapOf(
+                    provisioner.current.absolutePath to "/opt/sai-dsh",
+                    provisioner.home.absolutePath to "/var/lib/sai-dsh",
+                ),
             ),
         )
         val url = "http://127.0.0.1:${manifest.port}/"
@@ -144,7 +153,7 @@ class DshRuntimeSupervisor(
             if (health(url, accessToken)) {
                 _state.value = DshRuntimeState(
                     DshRuntimePhase.READY,
-                    "DeepSeek Harness ${manifest.dshVersion} ready",
+                    "sai Agent 已就绪",
                     1f,
                     url,
                     activeVersion,

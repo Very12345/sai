@@ -27,12 +27,12 @@ class ProotCommandBuilder(private val config: ProotConfig) {
         workingDirectory: String,
         workspaceHostPath: String? = null,
         guestEnvironment: Map<String, String> = emptyMap(),
+        trustedBinds: Map<String, String> = emptyMap(),
     ): List<String> {
         val workspace = workspaceHostPath?.let(::File)?.canonicalFile ?: config.home.canonicalFile
         require(workspace.isDirectory || workspace.mkdirs()) { "Workspace is unavailable: ${workspace.path}" }
-        // link2symlink represents Git hard links as absolute links under Android's
-        // /data/data/<package> alias. Bind only this app's private data root back to the
-        // same guest paths so Git can read its objects; Android UID isolation remains intact.
+        // Trusted service mounts are restricted to this app's private data. Do not bind
+        // the app-data parent itself: it contains this rootfs and creates a recursive mount.
         val appDataRoot = config.rootfs.parentFile?.parentFile?.parentFile?.canonicalFile
             ?.takeIf { it.name.isNotBlank() && File(it, "files").isDirectory }
         val prootInvocation = mutableListOf<String>()
@@ -52,9 +52,14 @@ class ProotCommandBuilder(private val config: ProotConfig) {
             "--bind=/system",
             "--bind=/apex",
         )
-        appDataRoot?.let { data ->
-            prootInvocation += "--bind=${data.absolutePath}:${data.absolutePath}"
-            prootInvocation += "--bind=${data.absolutePath}:/data/data/${data.name}"
+        trustedBinds.toSortedMap().forEach { (hostPath, guestPath) ->
+            val source = File(hostPath).canonicalFile
+            require(source.isDirectory) { "Trusted bind source is unavailable: ${source.path}" }
+            require(appDataRoot == null || source.path.startsWith(appDataRoot.path + File.separator)) {
+                "Trusted bind must remain inside app-private data: ${source.path}"
+            }
+            ensureGuestMountPoint(guestPath)
+            prootInvocation += "--bind=${source.absolutePath}:$guestPath"
         }
         prootInvocation += listOf(
             "--cwd=$workingDirectory",
@@ -80,4 +85,13 @@ class ProotCommandBuilder(private val config: ProotConfig) {
         workspaceHostPath: String? = null,
         guestEnvironment: Map<String, String> = emptyMap(),
     ): List<String> = shell("exec ${config.shell} -l", workingDirectory, workspaceHostPath, guestEnvironment)
+
+    private fun ensureGuestMountPoint(guestPath: String) {
+        require(guestPath.startsWith('/')) { "Guest bind path must be absolute: $guestPath" }
+        require(guestPath.split('/').none { it == ".." }) { "Guest bind path escapes rootfs: $guestPath" }
+        val root = config.rootfs.canonicalFile
+        val target = File(root, guestPath.trimStart('/')).canonicalFile
+        require(target.path.startsWith(root.path + File.separator)) { "Guest bind path escapes rootfs: $guestPath" }
+        require(target.isDirectory || target.mkdirs()) { "Cannot create guest bind point: ${target.path}" }
+    }
 }

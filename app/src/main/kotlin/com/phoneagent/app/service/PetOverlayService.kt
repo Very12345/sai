@@ -95,8 +95,8 @@ class PetOverlayService : Service() {
     private fun showOverlay() {
         if (petView != null) return
         val density = resources.displayMetrics.density
-        val fullWidth = (76 * density).toInt()
-        val fullHeight = (72 * density).toInt()
+        val fullWidth = (84 * density).toInt()
+        val fullHeight = (80 * density).toInt()
         val minimizedWidth = (52 * density).toInt()
         val minimizedHeight = (46 * density).toInt()
         val saved = getSharedPreferences("sai-ui", 0)
@@ -185,7 +185,13 @@ class PetOverlayService : Service() {
     }
 }
 
-private class SailRobotView(
+/**
+ * The single visual implementation of sai's companion.
+ *
+ * It is deliberately shared by the in-app dock and the system overlay so a
+ * detach transition never swaps the robot or the boat for another asset.
+ */
+class SailRobotView(
     context: android.content.Context,
     theme: String,
     private val onMove: (Int, Int) -> Unit,
@@ -213,6 +219,14 @@ private class SailRobotView(
     var statusText: String = ""
         set(value) { field = value; invalidate() }
     var voiceActive: Boolean = false
+        set(value) { field = value; invalidate() }
+    var dormant: Boolean = false
+        set(value) { field = value; invalidate() }
+    var launchProgress: Float = 0f
+        set(value) { field = value.coerceIn(0f, 1f); invalidate() }
+    var showCloseControl: Boolean = true
+        set(value) { field = value; invalidate() }
+    var showVoiceControl: Boolean = true
         set(value) { field = value; invalidate() }
     private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = 1_100
@@ -250,12 +264,22 @@ private class SailRobotView(
         val wave = sin(phase * Math.PI * 2).toFloat()
         canvas.save()
         canvas.scale(scale, scale)
-        canvas.translate(if (taskCount > 0 && !waitingApproval) wave * 2.4f else 0f, wave * if (voiceActive) 2.8f else 1.4f)
+        val launchWave = sin(launchProgress.coerceAtMost(1f) * Math.PI).toFloat()
+        canvas.translate(
+            if (taskCount > 0 && !waitingApproval) wave * 2.4f else launchWave * 2.2f,
+            when {
+                launchProgress > 0f -> -launchWave * 3.5f
+                dormant -> wave * .35f
+                voiceActive -> wave * 2.8f
+                else -> wave * 1.4f
+            },
+        )
         canvas.rotate(
             when {
                 voiceActive -> wave * 6.5f
                 waitingApproval -> wave * 1.2f
                 taskCount > 0 -> wave * 4f
+                dormant -> wave * .35f
                 else -> wave * 2f
             },
             36f,
@@ -264,16 +288,32 @@ private class SailRobotView(
 
         // Animated splashes; the window itself has no card, circle, or opaque background.
         paint.style = Paint.Style.FILL
-        paint.color = Color.argb((145 + phase * 90).toInt(), 54, 201, 230)
-        canvas.drawOval(RectF(8f - phase * 2f, 59f, 30f, 62f), paint)
-        canvas.drawOval(RectF(42f, 58f, 67f + phase * 2f, 61f), paint)
+        if (launchProgress > 0f) {
+            path.reset()
+            path.moveTo(-8f, 57f)
+            path.cubicTo(4f, 35f, 18f, 68f, 33f, 48f)
+            path.cubicTo(45f, 32f, 57f, 66f, 80f, 43f)
+            paint.style = Paint.Style.STROKE
+            paint.strokeCap = Paint.Cap.ROUND
+            paint.strokeWidth = 2.8f + launchProgress * 3.4f
+            paint.color = Color.argb((120 + launchProgress * 110).toInt(), 36, 188, 229)
+            canvas.drawPath(path, paint)
+            paint.strokeWidth = 1.5f + launchProgress * 1.8f
+            paint.color = Color.argb((95 + launchProgress * 105).toInt(), 255, 255, 255)
+            canvas.drawPath(path, paint)
+            paint.style = Paint.Style.FILL
+        }
+        val launchBoost = (launchProgress * 95f).toInt()
+        paint.color = Color.argb((145 + phase * 70 + launchBoost).toInt().coerceAtMost(255), 54, 201, 230)
+        canvas.drawOval(RectF(8f - phase * 2f - launchProgress * 5f, 59f, 30f, 62f), paint)
+        canvas.drawOval(RectF(42f, 58f, 67f + phase * 2f + launchProgress * 7f, 61f), paint)
         canvas.drawCircle(64f, 53f - phase * 4f, 1.8f, paint)
         canvas.drawCircle(6f, 55f - phase * 3f, 1.4f, paint)
         repeat(8) { index ->
             val seed = index / 8f
             val t = (phase + seed) % 1f
             val x = 5f + seed * 62f + (t - .5f) * (if (index % 2 == 0) 8f else -7f)
-            val y = 60f - sin(t * Math.PI).toFloat() * (3f + index % 3)
+            val y = 60f - sin(t * Math.PI).toFloat() * (3f + index % 3 + launchProgress * 4f)
             paint.alpha = (210 * (1f - t)).toInt().coerceIn(35, 210)
             canvas.drawCircle(x, y, 0.8f + (index % 3) * .45f, paint)
         }
@@ -319,19 +359,23 @@ private class SailRobotView(
             canvas.drawText(taskCount.coerceAtMost(9).toString(), 24.5f, 41.5f, paint)
         }
 
-        // Microphone is attached to the pet and remains the only small control surface.
-        paint.color = colors[1]; canvas.drawCircle(56f, 54f, 15f, paint)
-        paint.color = Color.WHITE; paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.7f
-        canvas.drawRoundRect(RectF(52f, 46.5f, 60f, 56.5f), 4f, 4f, paint)
-        canvas.drawArc(RectF(49.5f, 51f, 62.5f, 61f), 0f, 180f, false, paint)
-        canvas.drawLine(56f, 61f, 56f, 65f, paint)
-        paint.style = Paint.Style.FILL
+        if (showVoiceControl) {
+            // The microphone is an application-external overlay shortcut only.
+            paint.color = colors[1]; canvas.drawCircle(56f, 54f, 15f, paint)
+            paint.color = Color.WHITE; paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.7f
+            canvas.drawRoundRect(RectF(52f, 46.5f, 60f, 56.5f), 4f, 4f, paint)
+            canvas.drawArc(RectF(49.5f, 51f, 62.5f, 61f), 0f, 180f, false, paint)
+            canvas.drawLine(56f, 61f, 56f, 65f, paint)
+            paint.style = Paint.Style.FILL
+        }
 
         val activity = when {
             voiceActive && statusText.isNotBlank() -> "听：${statusText.takeLast(8)}"
             voiceActive -> "冲浪倾听"
             waitingApproval -> "收帆待批"
             taskCount > 0 -> "划船 · ${statusText.ifBlank { "执行任务" }.take(8)}"
+            launchProgress > 0f -> "扬帆出海"
+            dormant -> "泊岸休息"
             else -> "扬帆巡航"
         }
         paint.color = Color.argb(220, 16, 24, 44)
@@ -344,15 +388,17 @@ private class SailRobotView(
         canvas.restore()
 
         // Fixed control is outside the bobbing transform, keeping the entire 44dp target visible.
-        val closeRadius = minOf(width, height) * .105f
-        val closeX = width - closeRadius - 1f
-        val closeY = closeRadius + 1f
-        paint.color = Color.argb(238, 17, 21, 38); paint.style = Paint.Style.FILL
-        canvas.drawCircle(closeX, closeY, closeRadius, paint)
-        paint.color = Color.WHITE; paint.style = Paint.Style.STROKE; paint.strokeWidth = resources.displayMetrics.density * 1.5f
-        canvas.drawLine(closeX - closeRadius * .4f, closeY - closeRadius * .4f, closeX + closeRadius * .4f, closeY + closeRadius * .4f, paint)
-        canvas.drawLine(closeX + closeRadius * .4f, closeY - closeRadius * .4f, closeX - closeRadius * .4f, closeY + closeRadius * .4f, paint)
-        paint.style = Paint.Style.FILL
+        if (showCloseControl) {
+            val closeRadius = minOf(width, height) * .105f
+            val closeX = width - closeRadius - 1f
+            val closeY = closeRadius + 1f
+            paint.color = Color.argb(238, 17, 21, 38); paint.style = Paint.Style.FILL
+            canvas.drawCircle(closeX, closeY, closeRadius, paint)
+            paint.color = Color.WHITE; paint.style = Paint.Style.STROKE; paint.strokeWidth = resources.displayMetrics.density * 1.5f
+            canvas.drawLine(closeX - closeRadius * .4f, closeY - closeRadius * .4f, closeX + closeRadius * .4f, closeY + closeRadius * .4f, paint)
+            canvas.drawLine(closeX + closeRadius * .4f, closeY - closeRadius * .4f, closeX - closeRadius * .4f, closeY + closeRadius * .4f, paint)
+            paint.style = Paint.Style.FILL
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -378,8 +424,8 @@ private class SailRobotView(
                 }
                 onPositionSaved()
                 if (abs(event.rawX - downX) < 12 && abs(event.rawY - downY) < 12) {
-                    if (event.x > width * .72f && event.y < height * .32f) onMinimize()
-                    else if (event.x > width * .36f && event.y > height * .32f) onVoice()
+                    if (showCloseControl && event.x > width * .72f && event.y < height * .32f) onMinimize()
+                    else if (showVoiceControl && event.x > width * .36f && event.y > height * .32f) onVoice()
                     else onOpen()
                 }
                 return true

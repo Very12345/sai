@@ -119,7 +119,7 @@ class ExtensionCatalogClient(
     suspend fun searchPlugins(query: String, limit: Int = 30): List<CatalogExtension> = withContext(Dispatchers.IO) {
         val normalized = query.trim()
         (runCatching { officialSaiPlugins() }.getOrDefault(emptyList()) +
-            runCatching { searchDshPlugins(normalized, limit) }.getOrDefault(emptyList()) + publicClaudePlugins(1_000))
+            runCatching { searchDshPlugins(normalized, limit) }.getOrDefault(emptyList()))
             .distinctBy(CatalogExtension::id)
             .filter { normalized.isBlank() || it.name.contains(normalized, true) || it.description.contains(normalized, true) }
             .take(limit)
@@ -129,13 +129,13 @@ class ExtensionCatalogClient(
         val perKind = (limit / 2).coerceAtLeast(30)
         val skills = runCatching { publicSkills("trending", perKind) }.getOrDefault(emptyList())
         val mcp = runCatching { searchMcp("", perKind) }.getOrDefault(emptyList())
-        val plugins = runCatching { publicClaudePlugins(perKind) }.getOrDefault(emptyList())
         val dsh = (runCatching { officialSaiPlugins() }.getOrDefault(emptyList()) +
             runCatching { searchDshPlugins("", perKind) }.getOrDefault(emptyList()))
         val builtIns = builtInRecommendations()
-        val remote = (dsh + skills + mcp + plugins).distinctBy { "${it.kind}:${it.id}" }
+        val remote = (dsh + skills + mcp).distinctBy { "${it.kind}:${it.id}" }
             .sortedWith(compareByDescending<CatalogExtension> { it.installs != null }.thenByDescending { it.installs ?: 0L })
-        (remote + builtIns).distinctBy { "${it.kind}:${it.id}" }
+        val pinned = builtIns.filter { it.installUrl?.startsWith("sai-bundled-preset:") == true }
+        (pinned + remote + builtIns).distinctBy { "${it.kind}:${it.id}" }
     }
 
     private fun searchDshPlugins(query: String, limit: Int): List<CatalogExtension> {
@@ -215,33 +215,31 @@ class ExtensionCatalogClient(
         }
     }.getOrDefault(false)
 
-    private fun publicClaudePlugins(limit: Int): List<CatalogExtension> {
-        val endpoint = "https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/marketplace.json"
-        val root = getJson(endpoint).jsonObject
-        return root.arrayAt("plugins").mapNotNull { element ->
-            val plugin = element as? JsonObject ?: return@mapNotNull null
-            val name = plugin.stringAt("name") ?: return@mapNotNull null
-            val sourceElement = plugin["source"]
-            val sourceObject = sourceElement as? JsonObject
-            val repository = plugin.stringAt("homepage")
-                ?: sourceObject?.stringAt("url")?.removeSuffix(".git")
-                ?: "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/$name"
-            CatalogExtension(
-                id = "claude-official/$name",
-                name = name,
-                description = plugin.stringAt("description").orEmpty(),
-                version = plugin.stringAt("version").orEmpty(),
-                source = "Claude Plugins Official",
-                kind = ExtensionKind.PLUGIN,
-                installUrl = sourceObject?.stringAt("url"),
-                homepage = repository,
-                installs = null,
-                auditSummary = "官方市场目录 · 启用前仍需本地权限预检",
-            )
-        }.take(limit)
-    }
-
     private fun builtInRecommendations(): List<CatalogExtension> = listOf(
+        CatalogExtension(
+            id = "sai:preset:anchored-standard",
+            name = "Anchored Standard",
+            description = "首轮使用 Minimal 的真实工具面完成轨迹锚定，随后恢复完整 Standard。偏向 DeepSeek Pro 的维护、修复与长程代码任务。",
+            version = "0.1.0",
+            source = "sai 预装 · xiaobright/dsh-anchored-standard",
+            kind = ExtensionKind.PLUGIN,
+            installUrl = "sai-bundled-preset:anchored-standard",
+            homepage = "https://github.com/xiaobright/dsh-anchored-standard",
+            installs = Long.MAX_VALUE,
+            auditSummary = "MIT · 固定提交 95b98af · 实验性 Preset · 默认预装但不自动选中",
+        ),
+        CatalogExtension(
+            id = "sai:preset:router-standard",
+            name = "Router Standard",
+            description = "把构建任务路由到 react、修复任务路由到 spec，模糊任务进入 weak；Flash 使用单独的 classify/continue 提示。",
+            version = "0.1.1",
+            source = "sai 预装 · yjh051108/dsh-router-standard",
+            kind = ExtensionKind.PLUGIN,
+            installUrl = "sai-bundled-preset:router-standard",
+            homepage = "https://github.com/yjh051108/dsh-router-standard",
+            installs = Long.MAX_VALUE - 1,
+            auditSummary = "MIT · 固定提交 d4655d5 · 不包含高权限 super-injector",
+        ),
         CatalogExtension(
             id = "modelcontextprotocol/servers/filesystem",
             name = "Filesystem MCP",
@@ -284,46 +282,6 @@ class ExtensionCatalogClient(
             installs = 1,
             auditSummary = "官方公开仓库 · 安装前仍需本地审查",
         ),
-        CatalogExtension(
-            id = "anthropics/claude-plugins-official/code-review",
-            name = "code-review",
-            description = "使用多个专门审查角色检查代码变更，并按置信度过滤低质量结论。",
-            source = "Claude Plugins Official",
-            kind = ExtensionKind.PLUGIN,
-            homepage = "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/code-review",
-            installs = 1,
-            auditSummary = "Anthropic 管理的官方插件目录 · 导入前仍需权限预检",
-        ),
-        CatalogExtension(
-            id = "anthropics/claude-plugins-official/feature-dev",
-            name = "feature-dev",
-            description = "覆盖代码探索、架构设计、实现和质量审查的功能开发工作流。",
-            source = "Claude Plugins Official",
-            kind = ExtensionKind.PLUGIN,
-            homepage = "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/feature-dev",
-            installs = 1,
-            auditSummary = "Anthropic 管理的官方插件目录 · 导入前仍需权限预检",
-        ),
-        CatalogExtension(
-            id = "anthropics/claude-plugins-official/frontend-design",
-            name = "frontend-design plugin",
-            description = "生成更具辨识度、可用于生产的高质量前端界面。",
-            source = "Claude Plugins Official",
-            kind = ExtensionKind.PLUGIN,
-            homepage = "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/frontend-design",
-            installs = 1,
-            auditSummary = "Anthropic 管理的官方插件目录 · 导入前仍需权限预检",
-        ),
-        CatalogExtension(
-            id = "anthropics/claude-plugins-official/pyright-lsp",
-            name = "pyright-lsp",
-            description = "为 Python 提供类型检查、诊断和代码智能能力。",
-            source = "Claude Plugins Official",
-            kind = ExtensionKind.PLUGIN,
-            homepage = "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/pyright-lsp",
-            installs = 1,
-            auditSummary = "可能需要额外工具链依赖 · 安装依赖必须单独审批",
-        ),
     )
 
     suspend fun stageSkill(item: CatalogExtension): ExtensionInstallPlan = withContext(Dispatchers.IO) {
@@ -353,6 +311,114 @@ class ExtensionCatalogClient(
             files = files,
             permissions = permissions,
             warnings = warnings.distinct(),
+            safeToStage = warnings.none { it.startsWith("阻止") },
+        )
+    }
+
+    /**
+     * Stages a source-discovered DSH plugin without executing npm or repository scripts.
+     * Only repositories that already contain a JavaScript entry point and a DSH/Cordis
+     * bundle declaration are installable on a phone; source-only TypeScript projects
+     * remain visible in the catalog but are deliberately rejected here.
+     */
+    suspend fun stageDshPlugin(
+        item: CatalogExtension,
+        onProgress: (stage: String, progress: Float) -> Unit = { _, _ -> },
+    ): ExtensionInstallPlan = withContext(Dispatchers.IO) {
+        require(item.kind == ExtensionKind.PLUGIN) { "只有插件条目可以使用 DSH 便携安装器" }
+        require(item.id.startsWith("dsh:")) { "该插件没有可验证的 GitHub DSH 源；当前只能查看介绍" }
+        val repositoryId = item.id.removePrefix("dsh:")
+        val parts = repositoryId.split('/')
+        require(parts.size == 2) { "DSH 插件仓库标识无效" }
+        val (owner, repository) = parts
+        onProgress("正在读取 GitHub 仓库信息…", 0.08f)
+        val repo = getJson("https://api.github.com/repos/$owner/$repository").jsonObject
+        val branch = repo.stringAt("default_branch") ?: "main"
+        val license = (repo["license"] as? JsonObject)?.stringAt("spdx_id", "name")
+        val licenseUnknown = license.isNullOrBlank() || license in setOf("NOASSERTION", "OTHER")
+        onProgress("正在读取文件树与兼容清单…", 0.2f)
+        val tree = getJson("https://api.github.com/repos/$owner/$repository/git/trees/${urlPart(branch)}?recursive=1")
+            .jsonObject.arrayAt("tree").mapNotNull { it as? JsonObject }
+        val packageEntry = tree
+            .filter { it.stringAt("type") == "blob" && it.stringAt("path")?.endsWith("package.json") == true }
+            .sortedBy { it.stringAt("path")?.count { char -> char == '/' } ?: Int.MAX_VALUE }
+            .firstOrNull() ?: error("仓库中没有 package.json")
+        val packagePath = packageEntry.stringAt("path") ?: error("package.json 路径无效")
+        val packageDirectory = packagePath.substringBeforeLast('/', "")
+        val prefix = packageDirectory.takeIf(String::isNotBlank)?.plus('/') ?: ""
+        val packageText = getText(
+            "https://raw.githubusercontent.com/$owner/$repository/${urlPath(branch)}/${urlPath(packagePath)}",
+            "text/plain",
+        )
+        onProgress("正在验证 DSH bundle 与预构建入口…", 0.38f)
+        val manifest = json.parseToJsonElement(packageText).jsonObject
+        val scripts = manifest["scripts"] as? JsonObject
+        val blockedScripts = setOf("preinstall", "install", "postinstall", "prepare", "prepublish", "prepublishOnly")
+            .filter { scripts?.containsKey(it) == true }
+        require(blockedScripts.isEmpty()) {
+            "插件声明了禁止自动执行的生命周期脚本：${blockedScripts.joinToString()}"
+        }
+        val main = manifest.stringAt("main", "module") ?: "index.js"
+        require(main.endsWith(".js") || main.endsWith(".mjs") || main.endsWith(".cjs")) {
+            "插件只有源码入口，没有手机可直接运行的预构建 JavaScript"
+        }
+        val mainPath = validateRelativePath(prefix + main.removePrefix("./"))
+        require(tree.any { it.stringAt("type") == "blob" && it.stringAt("path") == mainPath }) {
+            "预构建入口不存在：$main"
+        }
+        val packageTree = tree.filter { entry ->
+            val path = entry.stringAt("path") ?: return@filter false
+            entry.stringAt("type") == "blob" && path.startsWith(prefix)
+        }
+        val hasCordisPatch = packageTree.any { entry ->
+            entry.stringAt("path")?.removePrefix(prefix) in setOf("cordis.patch.yml", "cordis.patch.yaml", "dsh.bundle.patch.yml")
+        }
+        val hasDshManifest = manifest.containsKey("dsh") || packageText.contains("dsh.bundle.patch")
+        require(hasCordisPatch || hasDshManifest) { "package.json 未声明 DSH bundle，且缺少 Cordis patch" }
+
+        val allowed = setOf("json", "js", "mjs", "cjs", "yml", "yaml", "md", "css", "html", "svg", "txt")
+        val selected = packageTree.filter { entry ->
+            val relative = entry.stringAt("path")?.removePrefix(prefix).orEmpty()
+            relative.substringAfterLast('.', "").lowercase() in allowed &&
+                !relative.startsWith("node_modules/") && !relative.startsWith(".git/")
+        }
+        require(selected.size <= 160) { "插件预构建包文件过多（${selected.size}），请使用作者提供的 npm tarball 或 Release" }
+        val permissions = mutableSetOf(ExtensionPermission.WORKSPACE_READ)
+        val warnings = mutableListOf<String>()
+        if (licenseUnknown) warnings += "未检测到明确开源许可证；公开仓库不等同于 MIT，请在安装和使用前自行确认作者授权"
+        var totalBytes = 0
+        val files = selected.mapIndexed { index, entry ->
+            onProgress(
+                "正在下载并扫描文件 ${index + 1}/${selected.size}…",
+                0.5f + (index.toFloat() / selected.size.coerceAtLeast(1)) * 0.42f,
+            )
+            val remotePath = entry.stringAt("path") ?: error("插件文件路径无效")
+            val relative = validateRelativePath(remotePath.removePrefix(prefix))
+            val declaredSize = (entry["size"] as? JsonPrimitive)?.contentOrNull?.toIntOrNull() ?: 0
+            totalBytes += declaredSize
+            require(totalBytes <= 4_000_000) { "插件预构建包超过 4 MB 文本安全上限" }
+            val contents = if (remotePath == packagePath) packageText else getText(
+                "https://raw.githubusercontent.com/$owner/$repository/${urlPath(branch)}/${urlPath(remotePath)}",
+                "text/plain",
+            )
+            scanCapabilities(relative, contents, permissions, warnings)
+            StagedExtensionFile(relative, contents, sha256(contents.encodeToByteArray()))
+        }
+        require(files.any { it.path == main.removePrefix("./") }) { "暂存包缺少声明的入口文件" }
+        onProgress("正在计算摘要与安装计划…", 0.95f)
+        warnings += "第三方 DSH 插件安装后默认禁用；启用会重启当前 DSH Profile"
+        val digest = sha256(files.sortedBy { it.path }.joinToString("\n") { "${it.path}:${it.digest}" }.encodeToByteArray())
+        ExtensionInstallPlan(
+            id = item.id,
+            name = manifest.stringAt("name") ?: item.name,
+            version = manifest.stringAt("version") ?: item.version.ifBlank { branch },
+            source = "https://github.com/$owner/$repository/tree/$branch/$packageDirectory",
+            kind = ExtensionKind.PLUGIN,
+            sourceDigest = digest,
+            files = files,
+            permissions = permissions,
+            warnings = warnings.distinct(),
+            license = license,
             safeToStage = warnings.none { it.startsWith("阻止") },
         )
     }
@@ -563,6 +629,18 @@ class ExtensionInstaller(private val installRoot: File) {
             file.writeText(staged.contents)
         }
         return target
+    }
+
+    fun uninstall(plan: ExtensionInstallPlan): Boolean {
+        val safeId = plan.id.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val version = plan.version.ifBlank { plan.sourceDigest.take(12) }
+        val root = installRoot.canonicalFile
+        val target = File(root, "$safeId/$version").canonicalFile
+        require(target.path.startsWith(root.path + File.separator)) { "卸载路径越界" }
+        val removed = !target.exists() || target.deleteRecursively()
+        val parent = target.parentFile
+        if (removed && parent?.list().isNullOrEmpty() && parent?.canonicalFile?.parentFile == root) parent.delete()
+        return removed
     }
 }
 

@@ -40,6 +40,7 @@ class AppContainer(
     val dshBridge = SaiDshBridgeServer(application, githubCli, providerSettings)
     val dshProvisioner = DshRuntimeProvisioner(application)
     val dshSettings = DshSettingsSynchronizer(providerSettings, database, dshProvisioner)
+    val dshExtensions = DshExtensionSynchronizer(application, database, dshProvisioner)
     val legacyDshMigration = LegacyDshMigrationWriter(database, dshProvisioner, dshWorkspaceRoot)
     val dshRuntime = DshRuntimeSupervisor(
         runtime,
@@ -48,11 +49,11 @@ class AppContainer(
         dshBridge::endpoint,
         prepareConfiguration = {
             dshSettings.syncNow()
+            dshExtensions.syncNow()
             legacyDshMigration.writePendingMigration()
         },
     )
     val dshApi = DshApiClient(state = { dshRuntime.state.value })
-    val coordinator = TaskSupervisor(application, database, runtime, providerSettings, workspace)
     val desktopConnection by lazy { DesktopConnectionManager(application, this) }
 }
 

@@ -1,24 +1,26 @@
-﻿{
+{
     "schemaVersion":  1,
-    "runtimeVersion":  "sai-dsh-0.1.0-rc.6-node-24.19.0-r3",
+    "runtimeVersion":  "sai-dsh-0.1.0-rc.6-node-24.19.0-r47",
     "dshVersion":  "0.1.0-rc.6",
     "nodeVersion":  "24.19.0",
-    "sourceCommit":  "47f943859bef60e4160492346772ded9b24f765a",
+    "sourceCommit":  "3683cb14c41dd626f15a3ac0c54a750c10f27b1e",
+    "sourceRepository":  "https://github.com/Very12345/deepseek-harness",
+    "webUiVariant":  "sai-mobile-r47",
     "packageLockSha256":  {
-                              "arm64-v8a":  "740f79750ef1a484303c351487147ebd3b1d9acd73600ad5c4f74f8733152ace",
-                              "x86_64":  "740f79750ef1a484303c351487147ebd3b1d9acd73600ad5c4f74f8733152ace"
+                              "arm64-v8a":  "5410592c42208be3bbe5a445f574ddd814192fa8c2219cc2a5d66006b23a25cf",
+                              "x86_64":  "159c63db1d5225f30d959d134e56234fa283a32e0e1973923273302978a736c7"
                           },
     "port":  3080,
     "archives":  {
                      "arm64-v8a":  {
                                        "asset":  "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-arm64-v8a.tar.xz",
-                                       "sha256":  "ede44d58e7b6513ad1a9c0bcbb481ca206ed30885058438aff5ee029108dc745",
-                                       "bytes":  55734416
+                                       "sha256":  "01eaa75b27a03ffbae2cf34a006b0a821a7c93706acb758f9c646d2b91f772e7",
+                                       "bytes":  57470980
                                    },
                      "x86_64":  {
                                     "asset":  "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-x86_64.tar.xz",
-                                    "sha256":  "1f1bbae09531c9de6d220d816ebf931136e41726bae16b99da02e3e13db141ef",
-                                    "bytes":  57288064
+                                    "sha256":  "a87fd550c6861345af2df8e65a4f8abc00992dd21cdc4d4c40083d9e5470f19c",
+                                    "bytes":  59190532
                                 }
                  }
 }

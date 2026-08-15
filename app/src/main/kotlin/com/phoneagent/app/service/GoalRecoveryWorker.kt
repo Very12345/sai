@@ -3,7 +3,6 @@ package com.phoneagent.app.service
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.phoneagent.agent.AgentRunState
 import com.phoneagent.app.PhoneAgentApplication
 
 /**
@@ -19,7 +18,7 @@ class GoalRecoveryWorker(
         if (cutoff <= 0L) return Result.failure()
         val dao = (applicationContext as PhoneAgentApplication).container.database.dao()
         dao.unfinishedSessionsBefore(cutoff).forEach { session ->
-            dao.updateSessionState(session.id, AgentRunState.PAUSED.name)
+            dao.updateSessionState(session.id, "PAUSED")
         }
         return Result.success()
     }

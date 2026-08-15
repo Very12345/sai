@@ -4,7 +4,7 @@ sai is a GPLv3 Android coding agent designed around a local workspace. Its name 
 a Debian/PRoot-compatible runtime, explicit tool approvals, and bring-your-own
 model API credentials.
 
-## Current implementation (1.2.0 DSH preview 2)
+## Current implementation (1.2.0 DSH preview 3)
 
 - Official DeepSeek Harness is the sole interactive Agent engine. The APK starts pinned DSH 0.1.0-rc.6
   on offline Node 24.19.0 inside app-private Debian/PRoot and embeds its authenticated Web client in
@@ -15,6 +15,10 @@ model API credentials.
 - First-party capabilities live in `dsh-plugins/` as separately versioned DSH bundles: UI, Android,
   voice, models, request guard, GitHub, market, pet, artifacts and legacy import. The public ecosystem
   topic is exactly `dsh-plugin`.
+- Two pinned community optimization presets are preinstalled but never forced on a session:
+  `Anchored Standard` for Minimal-aligned first-turn anchoring and `Router Standard` for
+  task-aware spec/react/weak routing (including a Flash-specific weak persona). Both are removable
+  and reinstallable from the extension center; the suite's unrestricted runtime injector is not bundled.
 - The DSH local origin is protected by a random HttpOnly session cookie, authenticated health checks
   and an allowlisted Android bridge; no general JavaScript interface is exposed.
 
@@ -67,7 +71,7 @@ model API credentials.
 The provider harness, GUI, persistence, approval system, native PRoot runtime,
 PTY bridge and rootfs installer build together as an ARM64 or x86_64 APK.
 Native artifacts can be reproduced with the pinned staging or from-source
-workflows documented in [native/README.md](native/README.md). The 1.2.0 preview 2 ARM64
+workflows documented in [native/README.md](native/README.md). The 1.2.0 preview 3 ARM64
 build is intended for in-place validation on a vivo X200s-class device without clearing app data. It
 includes the compact two-row composer, canvas-style PTY terminal, single-instance
 task pet, settings search, and full application themes.

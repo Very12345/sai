@@ -16,6 +16,9 @@ data class RunRequest(
     /** Never serialized or surfaced to the Agent event log. Only trusted app services may set it. */
     @kotlinx.serialization.Transient
     val sensitiveEnvironment: Map<String, String> = emptyMap(),
+    /** Host-to-guest directory binds for trusted app services; never exposed to model tools. */
+    @kotlinx.serialization.Transient
+    val trustedBinds: Map<String, String> = emptyMap(),
 )
 
 @Serializable
