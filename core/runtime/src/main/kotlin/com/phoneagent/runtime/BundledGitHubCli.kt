@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import java.io.File
+import java.io.InputStream
 import java.security.MessageDigest
 
 data class GitHubCliInstallResult(val version: String, val binary: File, val alreadyInstalled: Boolean)
@@ -31,8 +32,8 @@ class BundledGitHubCli(
             target.parentFile?.mkdirs()
             val staging = File(target.parentFile, ".gh-${bundle.version}.tmp")
             staging.delete()
-            assets.open(bundle.asset).buffered().use { raw ->
-                TarArchiveInputStream(GzipCompressorInputStream(raw)).use { tar ->
+            openBundleAsset(bundle).use { raw ->
+                githubCliTarInputStream(raw).use { tar ->
                     var found = false
                     while (true) {
                         val entry = tar.nextEntry ?: break
@@ -62,6 +63,19 @@ class BundledGitHubCli(
         else -> error("当前 ABI 不支持内置 GitHub CLI")
     }
 
+    /**
+     * AAPT transparently expands assets ending in `.gz` and stores them in the APK without the
+     * suffix. Local source trees still contain the original `.tar.gz`, while installed APKs expose
+     * `.tar`. Accept both forms so GitHub login does not depend on the Android packaging detail.
+     */
+    private fun openBundleAsset(bundle: Bundle): InputStream {
+        val candidates = listOf(bundle.asset, "${bundle.asset}.gz")
+        candidates.forEach { candidate ->
+            runCatching { return assets.open(candidate).buffered() }
+        }
+        error("内置 gh 资源缺失：${candidates.joinToString(" 或 ")}")
+    }
+
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().buffered().use { input ->
@@ -84,12 +98,22 @@ class BundledGitHubCli(
 
     companion object {
         private val ARM64 = Bundle(
-            "2.97.0", "runtime/gh_2.97.0_linux_arm64.tar.gz",
+            "2.97.0", "runtime/gh_2.97.0_linux_arm64.tar",
             "ccbb0f14178faefac1cb0f336a853071fa63a1d0df23ef5ab7a304fe3859e082", 38_076_578,
         )
         private val X86_64 = Bundle(
-            "2.97.0", "runtime/gh_2.97.0_linux_amd64.tar.gz",
+            "2.97.0", "runtime/gh_2.97.0_linux_amd64.tar",
             "141507c337e8b202ad398550c3b73d72f5af92e86f71665214538a81efd4c409", 40_992_930,
         )
     }
+}
+
+/** Opens either the raw TAR exposed by AAPT or the original TAR.GZ used by source builds. */
+internal fun githubCliTarInputStream(input: InputStream): TarArchiveInputStream {
+    val buffered = input.buffered().apply { mark(2) }
+    val first = buffered.read()
+    val second = buffered.read()
+    buffered.reset()
+    val archive = if (first == 0x1f && second == 0x8b) GzipCompressorInputStream(buffered) else buffered
+    return TarArchiveInputStream(archive)
 }

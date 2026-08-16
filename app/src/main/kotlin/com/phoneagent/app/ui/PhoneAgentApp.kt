@@ -3302,9 +3302,16 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
-                        IconButton(onClick = viewModel::checkExtensionUpdates, enabled = !state.extensionUpdateRunning) {
-                            if (state.extensionUpdateRunning) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            else Icon(Icons.Default.Refresh, "检查扩展更新")
+                        OutlinedButton(onClick = viewModel::checkExtensionUpdates, enabled = !state.extensionUpdateRunning) {
+                            if (state.extensionUpdateRunning) {
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(6.dp))
+                                Text("检查中")
+                            } else {
+                                Icon(Icons.Default.Refresh, null, Modifier.size(17.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("检查更新")
+                            }
                         }
                     }
                     state.extensionUpdateSummary?.let { summary ->

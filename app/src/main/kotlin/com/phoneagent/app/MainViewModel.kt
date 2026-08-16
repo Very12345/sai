@@ -1879,7 +1879,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (automatic && now - uiPreferences.getLong("extension_auto_update_checked_at", 0L) < 12 * 60 * 60_000L) return
         val installed = container.database.dao().extensions()
             .filter { it.kind.equals(ExtensionKind.PLUGIN.name, true) || it.kind.equals(ExtensionKind.SKILL.name, true) }
-        if (installed.isEmpty()) return
+        if (installed.isEmpty()) {
+            if (!automatic) {
+                val summary = "尚未安装可更新的第三方扩展"
+                _ui.update { it.copy(extensionUpdateRunning = false, extensionUpdateSummary = summary, message = summary) }
+            }
+            return
+        }
         _ui.update { it.copy(extensionUpdateRunning = true, extensionUpdateSummary = "正在检查 ${installed.size} 个扩展…") }
         val catalog = runCatching { extensionCatalog.recommendations(300) }.getOrElse { error ->
             _ui.update { it.copy(
