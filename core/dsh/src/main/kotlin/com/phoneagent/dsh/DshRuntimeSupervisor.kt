@@ -5,6 +5,8 @@ import com.phoneagent.runtime.LinuxRuntime
 import com.phoneagent.runtime.RunRequest
 import com.phoneagent.runtime.RuntimeJob
 import java.io.File
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.concurrent.atomic.AtomicBoolean
 import java.security.SecureRandom
 import java.util.Base64
@@ -12,11 +14,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -35,6 +40,7 @@ class DshRuntimeSupervisor(
     private val lifecycle = Mutex()
     private val requested = AtomicBoolean(false)
     private var job: RuntimeJob? = null
+    private var monitorJob: Job? = null
     private var webToken: String? = null
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<DshRuntimeState> = _state.asStateFlow()
@@ -159,7 +165,7 @@ class DshRuntimeSupervisor(
                     activeVersion,
                     accessToken,
                 )
-                monitor(url, accessToken)
+                monitorJob = monitor(url, accessToken)
                 return
             }
             delay(200)
@@ -187,9 +193,32 @@ class DshRuntimeSupervisor(
     }.getOrDefault(false)
 
     private suspend fun stopProcess() {
-        job?.let { runtime.stopJob(it.id) }
+        monitorJob?.cancelAndJoin()
+        monitorJob = null
+        job?.let { running ->
+            check(runtime.stopJob(running.id)) { "无法停止旧的 sai Agent 进程" }
+        }
         job = null
         webToken = null
+        check(waitForPortRelease(provisioner.manifest.port)) {
+            "旧的 sai Agent 尚未释放 127.0.0.1:${provisioner.manifest.port}，已阻止重复启动"
+        }
+    }
+
+    private suspend fun waitForPortRelease(port: Int): Boolean {
+        repeat(50) {
+            val occupied = withContext(Dispatchers.IO) {
+                runCatching {
+                    Socket().use { socket ->
+                        socket.connect(InetSocketAddress("127.0.0.1", port), 120)
+                    }
+                    true
+                }.getOrDefault(false)
+            }
+            if (!occupied) return true
+            delay(100)
+        }
+        return false
     }
 
     private fun initialState() = if (provisioner.isInstalled()) {

@@ -12,6 +12,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import kotlin.system.measureTimeMillis
 
 class ProcessLinuxRuntime(
@@ -124,8 +125,23 @@ class ProcessLinuxRuntime(
     override suspend fun stopJob(id: String): Boolean = jobMutex.withLock {
         val job = jobs[id] ?: return@withLock false
         job.model = job.model.copy(state = JobState.CANCELLED)
-        job.process.destroy()
-        true
+
+        // Long-running PRoot jobs usually have Node, shell and helper descendants. Destroying
+        // only the Java Process leaves those descendants alive, so the next DSH instance races
+        // the old listener and fails with EADDRINUSE. Jobs are launched through setsid when the
+        // device supports it; terminate the whole process group and wait for the port-owning
+        // descendants to actually exit before reporting success.
+        terminateProcessGroup(job.process, force = false)
+        val stopped = withContext(Dispatchers.IO) {
+            runCatching { job.process.waitFor(2, TimeUnit.SECONDS) }.getOrDefault(false)
+        }
+        if (!stopped && job.process.isAlive) {
+            terminateProcessGroup(job.process, force = true)
+            withContext(Dispatchers.IO) {
+                runCatching { job.process.waitFor(2, TimeUnit.SECONDS) }
+            }
+        }
+        !job.process.isAlive
     }
 
     override suspend fun openPty(

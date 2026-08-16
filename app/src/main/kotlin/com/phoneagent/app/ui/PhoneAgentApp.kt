@@ -69,6 +69,7 @@ import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.SmartToy
@@ -3260,6 +3261,7 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
     var catalogBrowserItem by remember { mutableStateOf<CatalogExtension?>(null) }
     var discoveryKind by remember { mutableStateOf<ExtensionKind?>(null) }
     var discoveryCategory by remember { mutableStateOf<String?>(null) }
+    var discoveryFilterOpen by remember { mutableStateOf(false) }
     val discoveryCategories = remember(state.extensionResults) {
         state.extensionResults.asSequence()
             .filter { it.kind == ExtensionKind.PLUGIN }
@@ -3293,11 +3295,27 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    Text(
-                        "随 sai 启用的 DSH 插件",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "随 sai 启用的 DSH 插件",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        IconButton(onClick = viewModel::checkExtensionUpdates, enabled = !state.extensionUpdateRunning) {
+                            if (state.extensionUpdateRunning) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Default.Refresh, "检查扩展更新")
+                        }
+                    }
+                    state.extensionUpdateSummary?.let { summary ->
+                        Text(
+                            summary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 items(
                     listOf(
@@ -3398,13 +3416,22 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                                 )
                             }
                             Text(extension.source, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (extension.installState == "UPDATE_AVAILABLE") {
+                                TextButton(onClick = { viewModel.inspectInstalledExtensionUpdate(extension) }) {
+                                    Text("权限有变化 · 查看更新")
+                                }
+                            }
                             TextButton(onClick = { viewModel.removeExtension(extension) }) { Text("移除记录", color = MaterialTheme.colorScheme.error) }
                         }
                     }
                 }
             }
             "发现" -> Column(Modifier.fillMaxSize()) {
-                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
                     OutlinedTextField(
                         value = state.extensionQuery,
                         onValueChange = { value ->
@@ -3412,93 +3439,39 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                             if (value.isBlank()) viewModel.loadExtensionRecommendations()
                         },
                         modifier = Modifier.weight(1f),
-                        label = { CompactFieldLabel("搜索 MCP、Skills 与 DSH 插件") },
+                        placeholder = { Text("搜索扩展", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         singleLine = true,
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = viewModel::searchExtensions, enabled = !state.extensionSearchRunning) {
+                    IconButton(onClick = viewModel::searchExtensions, enabled = !state.extensionSearchRunning) {
                         if (state.extensionSearchRunning) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                         else Icon(Icons.Default.Search, "搜索")
                     }
+                    IconButton(onClick = { discoveryFilterOpen = true }) {
+                        Icon(
+                            Icons.Default.FilterList,
+                            "筛选",
+                            tint = if (discoveryKind != null || discoveryCategory != null) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 state.extensionError?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error) }
-                Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)) {
                     val feedParts = state.extensionFeedTitle.split(" · ", limit = 2)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            feedParts.first(),
+                            buildString {
+                                append(feedParts.first())
+                                feedParts.getOrNull(1)?.let { append(" · ").append(it) }
+                                if (state.extensionQuery.isBlank()) append(" · awesome-dsh-plugin 精选目录")
+                                append(" · ").append(visibleDiscoveryResults.size).append(" 项")
+                            },
                             Modifier.weight(1f),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        feedParts.getOrNull(1)?.let { status ->
-                            Surface(
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.secondaryContainer,
-                            ) {
-                                Text(
-                                    status,
-                                    Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                    }
-                    if (state.extensionQuery.isBlank()) Text(
-                        "awesome-dsh-plugin 人工精选；Skills 与 MCP 使用各自目录，网络失败时读取缓存。",
-                        modifier = Modifier.fillMaxWidth(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        listOf(
-                            null to "全部",
-                            ExtensionKind.PLUGIN to "DSH 插件",
-                            ExtensionKind.SKILL to "Skills",
-                            ExtensionKind.MCP to "MCP",
-                        ).forEach { (kind, label) ->
-                            FilterChip(
-                                selected = discoveryKind == kind,
-                                onClick = {
-                                    discoveryKind = kind
-                                    if (kind != ExtensionKind.PLUGIN) discoveryCategory = null
-                                },
-                                label = { Text(label, maxLines = 1) },
-                            )
-                        }
-                        if (discoveryKind == ExtensionKind.PLUGIN && discoveryCategories.isNotEmpty()) {
-                            var categoryMenuOpen by remember { mutableStateOf(false) }
-                            Box {
-                                OutlinedButton(onClick = { categoryMenuOpen = true }) {
-                                    Text(discoveryCategory ?: "全部分类", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Icon(Icons.Default.ExpandMore, null)
-                                }
-                                DropdownMenu(expanded = categoryMenuOpen, onDismissRequest = { categoryMenuOpen = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text("全部分类") },
-                                        onClick = { discoveryCategory = null; categoryMenuOpen = false },
-                                    )
-                                    discoveryCategories.forEach { category ->
-                                        DropdownMenuItem(
-                                            text = { Text(category, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                            onClick = { discoveryCategory = category; categoryMenuOpen = false },
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
                 LazyColumn(
@@ -3540,6 +3513,95 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
             "Hooks" -> HookConfigurationPane(state, viewModel)
             else -> ExtensionDiagnosticsPane(state)
         }
+    }
+    if (discoveryFilterOpen) {
+        AlertDialog(
+            onDismissRequest = { discoveryFilterOpen = false },
+            title = { Text("筛选扩展") },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    item { Text("类型", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold) }
+                    items(
+                        listOf(
+                            null to "全部类型",
+                            ExtensionKind.PLUGIN to "DSH 插件",
+                            ExtensionKind.SKILL to "Skills",
+                            ExtensionKind.MCP to "MCP",
+                        ),
+                        key = { "kind:${it.first?.name ?: "all"}" },
+                    ) { (kind, label) ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                discoveryKind = kind
+                                if (kind != ExtensionKind.PLUGIN) discoveryCategory = null
+                            }.padding(vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = discoveryKind == kind,
+                                onCheckedChange = null,
+                            )
+                            Text(label)
+                        }
+                    }
+                    if (discoveryCategories.isNotEmpty()) {
+                        item {
+                            HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                            Text("DSH 插件分类", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        }
+                        item {
+                            Row(
+                                Modifier.fillMaxWidth().clickable {
+                                    discoveryKind = ExtensionKind.PLUGIN
+                                    discoveryCategory = null
+                                }.padding(vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(
+                                    checked = discoveryKind == ExtensionKind.PLUGIN && discoveryCategory == null,
+                                    onCheckedChange = null,
+                                )
+                                Text("全部 DSH 分类")
+                            }
+                        }
+                        items(discoveryCategories, key = { "category:$it" }) { category ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable {
+                                    discoveryKind = ExtensionKind.PLUGIN
+                                    discoveryCategory = category
+                                }.padding(vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(
+                                    checked = discoveryKind == ExtensionKind.PLUGIN && discoveryCategory == category,
+                                    onCheckedChange = null,
+                                )
+                                Column {
+                                    Text(extensionCategoryLabel(category))
+                                    if (extensionCategoryLabel(category) != category) {
+                                        Text(
+                                            category,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { Button(onClick = { discoveryFilterOpen = false }) { Text("完成") } },
+            dismissButton = {
+                TextButton(onClick = {
+                    discoveryKind = null
+                    discoveryCategory = null
+                }) { Text("重置") }
+            },
+        )
     }
     if (state.extensionPreflightRunning) {
         AlertDialog(
@@ -3618,6 +3680,22 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
     catalogBrowserItem?.let { item ->
         CatalogBrowserDialog(item, onDismiss = { catalogBrowserItem = null })
     }
+}
+
+private fun extensionCategoryLabel(category: String): String = when (category.trim()) {
+    "UI Enhancements" -> "界面增强"
+    "Themes & Appearance" -> "主题与外观"
+    "Models & Providers" -> "模型与提供商"
+    "Sessions & Messages" -> "会话与消息"
+    "Memory" -> "记忆"
+    "Tools & Capabilities" -> "工具与能力"
+    "Skills" -> "Skills"
+    "Workflow & Automation" -> "工作流与自动化"
+    "Notifications & Integrations" -> "通知与集成"
+    "Development & Runtime" -> "开发与运行时"
+    "Plugin Markets & Managers" -> "插件市场与管理"
+    "Just for Fun" -> "趣味插件"
+    else -> category
 }
 
 @SuppressLint("SetJavaScriptEnabled")

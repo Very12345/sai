@@ -51,7 +51,15 @@ class DshExtensionSynchronizer(
         val errors = mutableListOf<String>()
         skills.forEach { extension ->
             val sourceVersion = extension.version.ifBlank { extension.sourceDigest.take(12) }
-            val source = File(extensionRoot, "${safeInstallId(extension.id)}/$sourceVersion").canonicalFile
+            val safeVersion = sourceVersion.replace(Regex("[^A-Za-z0-9._-]"), "_").trim('_').ifBlank { "snapshot" }
+            val versionRoot = File(extensionRoot, safeInstallId(extension.id))
+            val source = listOf(
+                File(versionRoot, "$safeVersion-${extension.sourceDigest.take(12)}"),
+                // Read-only compatibility for extensions installed before digest-versioned
+                // snapshots were introduced.
+                File(versionRoot, sourceVersion),
+            ).firstOrNull(File::isDirectory)?.canonicalFile
+                ?: File(versionRoot, "$safeVersion-${extension.sourceDigest.take(12)}").canonicalFile
             val targetName = managedSkillName(extension.id)
             val target = File(skillsRoot, targetName).canonicalFile
             runCatching {

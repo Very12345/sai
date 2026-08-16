@@ -131,7 +131,7 @@ class ExtensionCatalogClient(
         // The curated README is small and already downloaded as one document.
         // Keep its full category tree locally so filtering never triggers a
         // GitHub request per chip or hides entries beyond an arbitrary top 30.
-        val dsh = runCatching { curatedDshPlugins("", 250) }.getOrDefault(emptyList())
+        val dsh = runCatching { curatedDshPlugins("", maxOf(limit, 1_000)) }.getOrDefault(emptyList())
         val builtIns = builtInRecommendations()
         val remote = (dsh + skills + mcp).distinctBy { "${it.kind}:${it.id}" }
             .sortedWith(compareByDescending<CatalogExtension> { it.installs != null }.thenByDescending { it.installs ?: 0L })
@@ -645,7 +645,9 @@ class ExtensionInstaller(private val installRoot: File) {
     fun install(plan: ExtensionInstallPlan): File {
         require(plan.safeToStage) { "静态检查阻止安装" }
         val safeId = plan.id.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        val version = plan.version.ifBlank { plan.sourceDigest.take(12) }
+        // A branch name such as "main" is not a version. Include the reviewed digest so an
+        // automatic update never overwrites the previous snapshot and can still roll back.
+        val version = installVersion(plan.version, plan.sourceDigest)
         val target = File(installRoot, "$safeId/$version").canonicalFile
         require(target.path.startsWith(installRoot.canonicalPath + File.separator)) { "安装路径越界" }
         target.mkdirs()
@@ -660,14 +662,25 @@ class ExtensionInstaller(private val installRoot: File) {
 
     fun uninstall(plan: ExtensionInstallPlan): Boolean {
         val safeId = plan.id.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        val version = plan.version.ifBlank { plan.sourceDigest.take(12) }
+        val version = installVersion(plan.version, plan.sourceDigest)
         val root = installRoot.canonicalFile
-        val target = File(root, "$safeId/$version").canonicalFile
-        require(target.path.startsWith(root.path + File.separator)) { "卸载路径越界" }
-        val removed = !target.exists() || target.deleteRecursively()
-        val parent = target.parentFile
+        val legacyVersion = plan.version.ifBlank { plan.sourceDigest.take(12) }
+        val targets = listOf(
+            File(root, "$safeId/$version").canonicalFile,
+            File(root, "$safeId/$legacyVersion").canonicalFile,
+        ).distinctBy(File::getPath)
+        targets.forEach { target ->
+            require(target.path.startsWith(root.path + File.separator)) { "卸载路径越界" }
+        }
+        val removed = targets.all { target -> !target.exists() || target.deleteRecursively() }
+        val parent = targets.first().parentFile
         if (removed && parent?.list().isNullOrEmpty() && parent?.canonicalFile?.parentFile == root) parent.delete()
         return removed
+    }
+
+    private fun installVersion(version: String, digest: String): String {
+        val safeVersion = version.replace(Regex("[^A-Za-z0-9._-]"), "_").trim('_').ifBlank { "snapshot" }
+        return "$safeVersion-${digest.take(12)}"
     }
 }
 

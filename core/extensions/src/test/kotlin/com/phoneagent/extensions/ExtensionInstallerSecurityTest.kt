@@ -2,6 +2,8 @@ package com.phoneagent.extensions
 
 import java.nio.file.Files
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -44,4 +46,31 @@ class ExtensionInstallerSecurityTest {
         ExtensionInstaller(root).install(plan)
         assertFalse(root.parentFile.resolve("escaped").exists())
     }
+
+    @Test
+    fun keepsPreviousSnapshotWhenMutableBranchUpdates() {
+        val root = Files.createTempDirectory("phoneagent-extension-update-test").toFile()
+        val first = reviewedPlan("digest-one", "first")
+        val second = reviewedPlan("digest-two", "second")
+
+        val firstDir = ExtensionInstaller(root).install(first)
+        val secondDir = ExtensionInstaller(root).install(second)
+
+        assertNotEquals(firstDir.canonicalPath, secondDir.canonicalPath)
+        assertEquals("first", firstDir.resolve("index.js").readText())
+        assertEquals("second", secondDir.resolve("index.js").readText())
+    }
+
+    private fun reviewedPlan(digest: String, contents: String) = ExtensionInstallPlan(
+        id = "owner/plugin",
+        name = "Plugin",
+        version = "main",
+        source = "https://example.invalid/owner/plugin",
+        kind = ExtensionKind.PLUGIN,
+        sourceDigest = digest,
+        files = listOf(StagedExtensionFile("index.js", contents, digest)),
+        permissions = setOf(ExtensionPermission.WORKSPACE_READ),
+        warnings = emptyList(),
+        safeToStage = true,
+    )
 }

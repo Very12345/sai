@@ -166,6 +166,8 @@ data class MainUiState(
     val extensionAudit: CapabilityDiagnostic? = null,
     val extensionError: String? = null,
     val extensionFeedTitle: String = "热门推荐",
+    val extensionUpdateRunning: Boolean = false,
+    val extensionUpdateSummary: String? = null,
     val mcpServers: List<McpServerEntity> = emptyList(),
     val hookConfigs: List<HookConfigEntity> = emptyList(),
     val desktopPairings: List<DesktopPairingEntity> = emptyList(),
@@ -221,6 +223,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         curatedDshCacheFile = File(getApplication<Application>().filesDir, "catalog-cache/awesome-dsh-plugin.md"),
     )
     private var extensionRecommendationCache: List<CatalogExtension> = emptyList()
+    private var extensionAutoUpdateScheduled = false
     private val extensionInstaller by lazy { ExtensionInstaller(File(getApplication<Application>().filesDir, "extensions")) }
     private val desktopConnection = container.desktopConnection
     private val appUpdateManager = AppUpdateManager(
@@ -273,6 +276,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             container.database.dao().observeExtensions().collectLatest { extensions ->
                 _ui.update { it.copy(installedExtensions = extensions) }
+                if (extensions.isNotEmpty() && !extensionAutoUpdateScheduled) {
+                    extensionAutoUpdateScheduled = true
+                    viewModelScope.launch {
+                        delay(1_500)
+                        checkExtensionUpdatesInternal(automatic = true)
+                    }
+                }
             }
         }
         viewModelScope.launch {
@@ -1366,9 +1376,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loginGitHubWithDevice() {
-        if (_ui.value.githubCliBusy || !_ui.value.githubCliStatus.installed) return
+        if (_ui.value.githubCliBusy) return
         viewModelScope.launch(Dispatchers.IO) {
-            _ui.update { it.copy(githubCliBusy = true, githubDeviceCode = null, message = "正在申请 GitHub 设备码…") }
+            _ui.update { it.copy(githubCliBusy = true, githubDeviceCode = null, message = "正在准备 gh 并申请 GitHub 设备码…") }
             container.githubCli.loginWithDeviceFlow { code ->
                 _ui.update { it.copy(githubDeviceCode = code, message = "请在 GitHub 验证页输入设备码 $code") }
             }.onSuccess { status ->
@@ -1810,8 +1820,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { extensionInstaller.install(plan) }
                 .onSuccess { target ->
-                    container.database.dao().upsertExtension(
-                        ExtensionEntity(
+                    val dao = container.database.dao()
+                    val existing = dao.extensions().firstOrNull { it.id == plan.id }
+                    dao.upsertExtension(
+                        existing?.copy(
+                            source = plan.source,
+                            previousManifestJson = existing.manifestJson,
+                            manifestJson = eventJson.encodeToString(ExtensionInstallPlan.serializer(), plan),
+                            version = plan.version,
+                            sourceDigest = plan.sourceDigest,
+                            installState = "INSTALLED",
+                            rollbackVersion = existing.version,
+                        ) ?: ExtensionEntity(
                             id = plan.id,
                             kind = plan.kind.name,
                             name = plan.name,
@@ -1822,10 +1842,104 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             sourceDigest = plan.sourceDigest,
                         ),
                     )
-                    _ui.update { it.copy(extensionPlan = null, extensionAudit = null, message = "已安装到 ${target.name}，默认为禁用") }
+                    if (existing?.enabled == true && plan.kind == ExtensionKind.PLUGIN) {
+                        syncDshExtensions(restart = true)
+                    }
+                    _ui.update { it.copy(
+                        extensionPlan = null,
+                        extensionAudit = null,
+                        message = if (existing == null) "已安装到 ${target.name}，默认为禁用" else "${plan.name} 已更新到 ${plan.version}",
+                    ) }
                 }
                 .onFailure { error -> _ui.update { it.copy(extensionError = error.message) } }
         }
+    }
+
+    fun checkExtensionUpdates() {
+        if (_ui.value.extensionUpdateRunning) return
+        viewModelScope.launch { checkExtensionUpdatesInternal(automatic = false) }
+    }
+
+    fun inspectInstalledExtensionUpdate(extension: ExtensionEntity) {
+        viewModelScope.launch {
+            _ui.update { it.copy(extensionSearchRunning = true, extensionError = null) }
+            val item = runCatching { extensionCatalog.recommendations(300).firstOrNull { it.id == extension.id } }
+                .getOrNull()
+            _ui.update { it.copy(extensionSearchRunning = false) }
+            if (item == null) {
+                _ui.update { it.copy(message = "当前精选目录中找不到 ${extension.name} 的更新来源") }
+            } else {
+                inspectExtension(item)
+            }
+        }
+    }
+
+    private suspend fun checkExtensionUpdatesInternal(automatic: Boolean) {
+        val now = System.currentTimeMillis()
+        if (automatic && now - uiPreferences.getLong("extension_auto_update_checked_at", 0L) < 12 * 60 * 60_000L) return
+        val installed = container.database.dao().extensions()
+            .filter { it.kind.equals(ExtensionKind.PLUGIN.name, true) || it.kind.equals(ExtensionKind.SKILL.name, true) }
+        if (installed.isEmpty()) return
+        _ui.update { it.copy(extensionUpdateRunning = true, extensionUpdateSummary = "正在检查 ${installed.size} 个扩展…") }
+        val catalog = runCatching { extensionCatalog.recommendations(300) }.getOrElse { error ->
+            _ui.update { it.copy(
+                extensionUpdateRunning = false,
+                extensionUpdateSummary = "检查失败：${error.message ?: "网络不可用"}",
+            ) }
+            return
+        }.associateBy(CatalogExtension::id)
+        var updated = 0
+        var review = 0
+        var failed = 0
+        var restart = false
+        installed.forEachIndexed { index, extension ->
+            val item = catalog[extension.id] ?: return@forEachIndexed
+            _ui.update { it.copy(extensionUpdateSummary = "正在检查 ${index + 1}/${installed.size} · ${extension.name}") }
+            val plan = runCatching {
+                when (item.kind) {
+                    ExtensionKind.PLUGIN -> extensionCatalog.stageDshPlugin(item)
+                    ExtensionKind.SKILL -> extensionCatalog.stageSkill(item)
+                    else -> error("不支持自动更新")
+                }
+            }.getOrElse {
+                failed += 1
+                return@forEachIndexed
+            }
+            if (plan.sourceDigest == extension.sourceDigest) return@forEachIndexed
+            val previous = runCatching {
+                eventJson.decodeFromString(ExtensionInstallPlan.serializer(), extension.manifestJson)
+            }.getOrNull()
+            val permissionExpanded = previous == null || !previous.permissions.containsAll(plan.permissions)
+            if (permissionExpanded) {
+                container.database.dao().upsertExtension(extension.copy(installState = "UPDATE_AVAILABLE"))
+                review += 1
+                return@forEachIndexed
+            }
+            runCatching {
+                extensionInstaller.install(plan)
+                container.database.dao().upsertExtension(extension.copy(
+                    source = plan.source,
+                    previousManifestJson = extension.manifestJson,
+                    manifestJson = eventJson.encodeToString(ExtensionInstallPlan.serializer(), plan),
+                    version = plan.version,
+                    sourceDigest = plan.sourceDigest,
+                    installState = "INSTALLED",
+                    rollbackVersion = extension.version,
+                ))
+            }.onSuccess {
+                updated += 1
+                restart = restart || (extension.enabled && item.kind == ExtensionKind.PLUGIN)
+            }.onFailure { failed += 1 }
+        }
+        uiPreferences.edit().putLong("extension_auto_update_checked_at", now).apply()
+        if (restart) syncDshExtensions(restart = true)
+        val summary = buildString {
+            append(if (updated == 0) "扩展已是最新" else "已自动更新 $updated 个扩展")
+            if (review > 0) append(" · $review 个权限变化待确认")
+            if (failed > 0) append(" · $failed 个检查失败")
+        }
+        _ui.update { it.copy(extensionUpdateRunning = false, extensionUpdateSummary = summary) }
+        if (!automatic || updated > 0 || review > 0) _ui.update { it.copy(message = summary) }
     }
 
     fun toggleExtension(extension: ExtensionEntity) {
