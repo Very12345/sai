@@ -77,18 +77,6 @@ h1 span { background: linear-gradient(95deg, #84edff 0%, #7f8cff 48%, #ff73b2 10
 .hero-trust span::before { content: "✓"; margin-right: 6px; color: var(--green); }
 
 .hero-stage { position: relative; min-height: 650px; margin: 0; display: grid; place-items: center; perspective: 1200px; }
-.hero-poster { min-height: 510px; }
-.poster-frame { position: relative; z-index: 2; width: min(650px, 100%); overflow: hidden; border: 1px solid rgba(130, 212, 255, .3); border-radius: 28px; background: #071026; box-shadow: 0 50px 120px rgba(0, 0, 0, .52), 0 0 80px rgba(64, 122, 255, .13); transform: rotateY(-5deg) rotateX(2deg); }
-.poster-frame::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), inset 0 -70px 80px rgba(2,5,15,.44); }
-.poster-frame img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
-.poster-frame figcaption { position: absolute; z-index: 2; right: 24px; bottom: 20px; left: 24px; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
-.poster-frame figcaption span { color: #8defff; font-size: 9px; font-weight: 800; letter-spacing: .13em; }
-.poster-frame figcaption b { color: #fff; font-size: 11px; }
-.poster-badge { position: absolute; z-index: 4; min-width: 190px; padding: 13px 15px; display: flex; flex-direction: column; gap: 2px; white-space: nowrap; border: 1px solid rgba(107, 194, 255, .25); border-radius: 14px; background: rgba(9, 15, 31, .92); box-shadow: 0 18px 50px rgba(0,0,0,.36); backdrop-filter: blur(18px); }
-.poster-badge span { color: var(--cyan); font-size: 8px; font-weight: 800; letter-spacing: .14em; }
-.poster-badge b { margin-top: 3px; font-size: 11px; }
-.poster-runtime { right: -15px; bottom: 50px; }
-.poster-core { left: -20px; top: 42px; }
 .stage-ring { position: absolute; border: 1px solid rgba(86, 171, 255, .13); border-radius: 50%; }
 .ring-a { width: 570px; height: 570px; box-shadow: inset 0 0 80px rgba(84, 90, 255, .035); }
 .ring-b { width: 430px; height: 430px; border-style: dashed; animation: spin 30s linear infinite; }
@@ -219,6 +207,14 @@ h1 span { background: linear-gradient(95deg, #84edff 0%, #7f8cff 48%, #ff73b2 10
 
 .download-section { padding-bottom: 80px; }
 .download-panel { padding: 48px; display: grid; grid-template-columns: .9fr 1.1fr; gap: 56px; border: 1px solid rgba(93,180,255,.25); border-radius: 32px; background: radial-gradient(circle at 0 100%, rgba(68,195,230,.11), transparent 28rem), linear-gradient(145deg, rgba(24,34,61,.92), rgba(10,14,27,.96)); box-shadow: var(--shadow); }
+.release-art { position: relative; grid-column: 1 / -1; margin: 0 0 6px; overflow: hidden; border: 1px solid rgba(130, 212, 255, .24); border-radius: 23px; background: #071026; box-shadow: 0 28px 70px rgba(0, 0, 0, .34); }
+.release-art::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 -100px 100px rgba(2, 5, 15, .68); }
+.release-art img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.release-art figcaption { position: absolute; z-index: 2; right: 25px; bottom: 22px; left: 25px; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.release-art figcaption div { display: flex; flex-direction: column; gap: 3px; }
+.release-art figcaption span { color: var(--cyan); font-size: 9px; font-weight: 800; letter-spacing: .15em; }
+.release-art figcaption b { font-size: 16px; }
+.release-art figcaption a { flex: 0 0 auto; padding: 8px 12px; border: 1px solid rgba(255,255,255,.18); border-radius: 10px; background: rgba(5,9,19,.55); color: #eaf1ff; font-size: 10px; font-weight: 800; backdrop-filter: blur(12px); }
 .download-intro p { margin: 25px 0; color: var(--muted); }
 .requirements { display: flex; flex-wrap: wrap; gap: 7px; }
 .requirements b { padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; color: #c4cbe0; font-size: 9px; }
@@ -307,15 +303,7 @@ footer { border-top: 1px solid var(--line); background: #060912; }
   .hero-lead { font-size: 15px; }
   .hero-actions { flex-direction: column; }
   .button { width: 100%; }
-  .hero-stage { min-height: 360px; margin-inline: 0; transform: none; }
-  .hero-poster { min-height: 360px; }
-  .poster-frame { border-radius: 20px; transform: none; }
-  .poster-frame figcaption { right: 14px; bottom: 12px; left: 14px; }
-  .poster-frame figcaption b { display: none; }
-  .poster-badge { min-width: 145px; padding: 9px 11px; }
-  .poster-badge b { font-size: 9px; }
-  .poster-core { left: 8px; top: 12px; }
-  .poster-runtime { right: 8px; bottom: 8px; }
+  .hero-stage { min-height: 590px; margin-inline: -12px; transform: scale(.9); }
   .phone { height: 610px; }
   .dsh-float { left: 0; }
   .runtime-float { right: 0; }
@@ -335,6 +323,10 @@ footer { border-top: 1px solid var(--line); background: #060912; }
   .plugin-stack > div { min-height: 88px; }
   .fit-grid div { grid-template-columns: 1fr; gap: 5px; }
   .download-panel { padding: 25px; gap: 40px; border-radius: 24px; }
+  .release-art { border-radius: 16px; }
+  .release-art figcaption { right: 14px; bottom: 12px; left: 14px; }
+  .release-art figcaption b { font-size: 12px; }
+  .release-art figcaption a { display: none; }
   .download-list > a { grid-template-columns: 42px 1fr; }
   .download-list em { grid-column: 2; }
   .release-status { justify-content: flex-start; }

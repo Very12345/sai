@@ -16,7 +16,7 @@
   <meta name="twitter:image" content="https://very12345.github.io/sai/og.png" />
   <title>sai 1.2.0 · 随身本地编码 Agent</title>
   <link rel="icon" href="sai.svg" />
-  <link rel="stylesheet" href="styles.css?v=20260816.2" />
+  <link rel="stylesheet" href="styles.css?v=20260816.3" />
 </head>
 <body>
   <div class="page-glow glow-one"></div><div class="page-glow glow-two"></div><div class="noise"></div>
@@ -45,14 +45,25 @@
         <div class="hero-trust"><span>GPLv3 开源</span><span>DSH MIT</span><span>Android 10+</span><span>BYO API Key</span><span>本地优先</span></div>
       </div>
 
-      <figure class="hero-stage hero-poster reveal delay">
-        <div class="poster-frame">
-          <img src="og.png" alt="sai 1.2.0 彩色帆船品牌视觉：随身本地编码 Agent" />
-          <figcaption><span>SAI 1.2.0 · OFFICIAL VISUAL</span><b>本地运行，向更远处航行。</b></figcaption>
+      <div class="hero-stage reveal delay" aria-label="sai 移动端界面示意">
+        <div class="stage-ring ring-a"></div><div class="stage-ring ring-b"></div>
+        <div class="phone">
+          <div class="phone-status"><span>9:41</span><b>sai</b><span>● ●●</span></div>
+          <div class="phone-head"><img src="sai.svg" alt="" /><div><strong>sai</strong><small>本地环境已就绪</small></div><button aria-label="项目文件">▱</button></div>
+          <div class="phone-session"><div><small>默认项目</small><b>完善登录页与 API</b></div><span>运行中</span></div>
+          <div class="phone-turn">
+            <div class="turn-title"><span>当前工作</span><em>2 / 4</em></div>
+            <h3>实现登录界面并验证后端</h3>
+            <p>正在检查项目结构与最近一次工具结果…</p>
+            <div class="tool-row"><b>›_</b><span>python -m pytest</span><mark>8 passed</mark></div>
+            <div class="diff-row"><b>+ 124</b><b>− 18</b><span>3 个文件</span></div>
+          </div>
+          <div class="phone-composer"><p>给 sai 发送消息…</p><div><button>＋</button><span>Workspace Write</span><i></i><span>DeepSeek · High</span><button>↑</button></div></div>
         </div>
-        <div class="poster-badge poster-runtime"><span>LOCAL RUNTIME</span><b>Debian 13 · Git · Python</b></div>
-        <div class="poster-badge poster-core"><span>AGENT CORE</span><b>DeepSeek Harness</b></div>
-      </figure>
+        <div class="runtime-float"><span>LOCAL RUNTIME</span><b>Debian 13 · Git · Python</b><small>应用私有工作区</small></div>
+        <div class="dsh-float"><span>AGENT CORE</span><b>DeepSeek Harness</b><small>会话 · 工具 · 事件 · 压缩</small></div>
+        <div class="pet-float"><img src="sai.svg" alt="" /><span>任务正在航行</span></div>
+      </div>
     </section>
 
     <section class="proof-strip">
@@ -158,6 +169,10 @@
 
     <section id="download" class="section shell download-section">
       <div class="download-panel reveal">
+        <figure class="release-art">
+          <img src="og.png" alt="sai 1.2.0 彩色帆船正式版发布主视觉" />
+          <figcaption><div><span>FIRST STABLE RELEASE</span><b>sai 1.2.0 · 第一个正式版</b></div><a data-release-page href="#">查看完整发布说明 →</a></figcaption>
+        </figure>
         <div class="download-intro"><span>07 · DOWNLOAD</span><h2>从第一个正式版，开始航行。</h2><p>所有产物由 GitHub Actions 构建并附带 SHA-256、SBOM 与许可证。手机端可自行检查、下载、校验并升级，后续无需反复连接 USB。</p><div class="requirements"><b>Android 10+</b><b>ARM64 推荐</b><b>约 1 GB 基础空间</b><b>模型 API Key</b></div></div>
         <div class="download-list">
           <a data-mobile-download href="#"><div class="download-icon"><img src="sai.svg" alt="" /></div><span><b>sai Mobile</b><small>Android ARM64 · 主程序</small></span><em>下载 APK ↓</em></a>
@@ -186,6 +201,6 @@
       <div><b>状态</b><span>第一个正式版 · v1.2.0</span><span>Android 10+ · 侧载发布</span><span id="year"></span></div>
     </div>
   </footer>
-  <script src="app.js?v=20260816.2"></script>
+  <script src="app.js?v=20260816.3"></script>
 </body>
 </html>
