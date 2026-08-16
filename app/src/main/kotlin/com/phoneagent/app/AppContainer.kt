@@ -34,7 +34,11 @@ class AppContainer(
     val projectsRoot: File = File(application.filesDir, "workspaces/Project").apply { mkdirs() }
     val rootfsInstaller = RootfsInstallerFactory.create(application)
     val githubCli = GitHubCliManager(
-        BundledGitHubCli(application, rootfsInstaller.rootfsDir), runtime, secretStore, workspace,
+        BundledGitHubCli(application, rootfsInstaller.rootfsDir),
+        runtime,
+        secretStore,
+        workspace,
+        File(application.cacheDir, "github-auth"),
     )
     val providerSettings = ProviderSettingsRepository(application, secretStore, database)
     val dshBridge = SaiDshBridgeServer(application, githubCli, providerSettings)

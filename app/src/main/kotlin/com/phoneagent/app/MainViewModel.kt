@@ -115,6 +115,9 @@ data class MainUiState(
     val appTheme: String = "aurora",
     val voiceInputGesture: VoiceInputGesture = VoiceInputGesture.TAP,
     val voiceModelPackInstalled: Boolean = false,
+    val voiceModelPackBusy: Boolean = false,
+    val voiceModelPackProgress: String? = null,
+    val voiceModelPackApkPath: String? = null,
     val files: List<FileItem> = emptyList(),
     val currentDirectory: String = "",
     val fileSearch: String = "",
@@ -1351,7 +1354,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateGitHubToken(value: String) = _ui.update { it.copy(githubTokenInput = value) }
 
-    fun refreshVoiceModelPack() = _ui.update { it.copy(voiceModelPackInstalled = VoiceModelPack.isInstalled(getApplication())) }
+    fun refreshVoiceModelPack() = _ui.update {
+        val installed = VoiceModelPack.isInstalled(getApplication())
+        it.copy(
+            voiceModelPackInstalled = installed,
+            voiceModelPackApkPath = if (installed) null else it.voiceModelPackApkPath,
+            voiceModelPackProgress = if (installed) null else it.voiceModelPackProgress,
+        )
+    }
+
+    fun downloadVoiceModelPack() {
+        if (_ui.value.voiceModelPackBusy) return
+        _ui.value.voiceModelPackApkPath?.let {
+            installDownloadedVoiceModelPack()
+            return
+        }
+        viewModelScope.launch {
+            _ui.update { it.copy(voiceModelPackBusy = true, voiceModelPackProgress = "正在查询 GitHub Release…") }
+            runCatching {
+                val asset = appUpdateManager.latestApkAsset(VoiceModelPack.ASSET_NAME)
+                    ?: error("当前 GitHub Releases 中没有可安装的 sai Voice Pack")
+                _ui.update { it.copy(voiceModelPackProgress = "找到 ${asset.tag}，正在下载…") }
+                appUpdateManager.downloadModule(asset, VoiceModelPack.PACKAGE_NAME) { copied, total ->
+                    _ui.update {
+                        val percent = if (total > 0) (copied * 100 / total).coerceIn(0, 100) else null
+                        it.copy(voiceModelPackProgress = percent?.let { value -> "正在下载 $value%" } ?: "正在下载语音模型包…")
+                    }
+                }
+            }.onSuccess { apk ->
+                _ui.update {
+                    it.copy(
+                        voiceModelPackBusy = false,
+                        voiceModelPackProgress = "SHA-256、包名与签名校验完成",
+                        voiceModelPackApkPath = apk.absolutePath,
+                    )
+                }
+                installDownloadedVoiceModelPack()
+            }.onFailure { error ->
+                _ui.update {
+                    it.copy(
+                        voiceModelPackBusy = false,
+                        voiceModelPackProgress = error.message ?: "语音模型包下载失败",
+                    )
+                }
+            }
+        }
+    }
+
+    fun installDownloadedVoiceModelPack() {
+        val path = _ui.value.voiceModelPackApkPath ?: return
+        runCatching { appUpdateManager.launchInstaller(File(path)) }
+            .onSuccess { launched ->
+                _ui.update {
+                    it.copy(message = if (launched) "请在系统安装器中确认安装 Voice Pack" else "请允许 sai 安装未知应用，返回后再次点击安装")
+                }
+            }
+            .onFailure { error -> _ui.update { it.copy(message = error.message ?: "无法打开 Voice Pack 安装器") } }
+    }
 
     fun refreshGitHubCli() {
         if (_ui.value.githubCliBusy) return

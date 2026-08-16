@@ -4230,14 +4230,26 @@ private fun AppearanceAndVoiceSettings(state: MainUiState, viewModel: MainViewMo
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("卸载语音模型包") }
                         } else {
+                            state.voiceModelPackProgress?.let { progress ->
+                                Text(
+                                    progress,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (state.voiceModelPackBusy) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                             Button(
-                                onClick = {
-                                    val uri = VoiceModelPack.downloadUri()
-                                    if (uri != null) context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-                                    else viewModel.showMessage("本地开发包未配置 GitHub Release 地址，请从项目 Release 安装 sai-voice-pack-zh-en.apk")
-                                },
+                                onClick = viewModel::downloadVoiceModelPack,
                                 modifier = Modifier.fillMaxWidth(),
-                            ) { Text("从 GitHub Release 获取语音模型包") }
+                                enabled = !state.voiceModelPackBusy,
+                            ) {
+                                if (state.voiceModelPackBusy) {
+                                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(if (state.voiceModelPackApkPath != null) "安装已下载的语音模型包" else "下载并安装语音模型包")
+                            }
                         }
                     }
                 }
@@ -4567,7 +4579,8 @@ private fun SettingsScreen(
                             else Icon(Icons.Default.Refresh, "刷新 GitHub 状态")
                         }
                     }
-                    state.githubCliStatus.login?.let { login ->
+                    if (state.githubCliStatus.authenticated) {
+                        val login = state.githubCliStatus.login ?: "GitHub 账户"
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             GitHubAvatar(state.githubCliStatus.avatarUrl, login)
                             Spacer(Modifier.width(12.dp))
@@ -4579,7 +4592,7 @@ private fun SettingsScreen(
                         OutlinedButton(onClick = viewModel::logoutGitHub, modifier = Modifier.fillMaxWidth(), enabled = !state.githubCliBusy) {
                             Text("退出 GitHub")
                         }
-                    } ?: run {
+                    } else {
                         Button(
                             onClick = viewModel::loginGitHubWithDevice,
                             enabled = !state.githubCliBusy,

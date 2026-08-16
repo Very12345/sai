@@ -44,6 +44,14 @@ internal data class SaiRelease(
     val checksumsUrl: String,
 )
 
+internal data class SaiApkAsset(
+    val tag: String,
+    val pageUrl: String,
+    val apkName: String,
+    val apkUrl: String,
+    val checksumsUrl: String,
+)
+
 internal class AppUpdateManager(
     private val context: Context,
     private val githubTokenProvider: () -> CharArray? = { null },
@@ -53,14 +61,9 @@ internal class AppUpdateManager(
     private val updateDirectory = File(context.cacheDir, "app-updates")
 
     suspend fun check(): SaiRelease? = withContext(Dispatchers.IO) {
-        val request = request("https://api.github.com/repos/${BuildConfig.GITHUB_REPOSITORY}/releases?per_page=20")
-        val releases = client.newCall(request).execute().use { response ->
-            val body = response.body.string()
-            check(response.isSuccessful) { "GitHub Release 检查失败：HTTP ${response.code}" }
-            json.parseToJsonElement(body) as? JsonArray ?: error("GitHub Release 返回格式无效")
-        }
+        val releases = releaseRoots()
         val allowPrerelease = BuildConfig.VERSION_NAME.contains("preview", true) || BuildConfig.VERSION_NAME.contains("rc", true)
-        releases.mapNotNull { it as? JsonObject }
+        releases
             .filterNot { (it["draft"] as? JsonPrimitive)?.booleanOrNull == true }
             .filter { allowPrerelease || (it["prerelease"] as? JsonPrimitive)?.booleanOrNull != true }
             .mapNotNull(::parseRelease)
@@ -68,23 +71,58 @@ internal class AppUpdateManager(
             .maxWithOrNull { left, right -> compareSaiVersions(left.tag, right.tag) }
     }
 
+    /** Resolves a module APK from real Release assets, including preview releases used by sai. */
+    suspend fun latestApkAsset(assetName: String): SaiApkAsset? = withContext(Dispatchers.IO) {
+        require(assetName.matches(Regex("[A-Za-z0-9._-]+\\.apk"))) { "APK 资产名称无效" }
+        releaseRoots()
+            .filterNot { (it["draft"] as? JsonPrimitive)?.booleanOrNull == true }
+            .mapNotNull { root -> parseApkAsset(root, assetName) }
+            .maxWithOrNull { left, right -> compareSaiVersions(left.tag, right.tag) }
+    }
+
     suspend fun download(
         release: SaiRelease,
         onProgress: (downloaded: Long, total: Long) -> Unit,
+    ): File = downloadVerifiedApk(
+        apkName = release.apkName,
+        apkUrl = release.apkUrl,
+        checksumsUrl = release.checksumsUrl,
+        expectedPackageName = context.packageName,
+        onProgress = onProgress,
+    )
+
+    suspend fun downloadModule(
+        asset: SaiApkAsset,
+        expectedPackageName: String,
+        onProgress: (downloaded: Long, total: Long) -> Unit,
+    ): File = downloadVerifiedApk(
+        apkName = asset.apkName,
+        apkUrl = asset.apkUrl,
+        checksumsUrl = asset.checksumsUrl,
+        expectedPackageName = expectedPackageName,
+        onProgress = onProgress,
+    )
+
+    private suspend fun downloadVerifiedApk(
+        apkName: String,
+        apkUrl: String,
+        checksumsUrl: String,
+        expectedPackageName: String,
+        onProgress: (downloaded: Long, total: Long) -> Unit,
     ): File = withContext(Dispatchers.IO) {
         updateDirectory.mkdirs()
-        val checksumText = client.newCall(request(release.checksumsUrl)).execute().use { response ->
+        val checksumText = client.newCall(request(checksumsUrl)).execute().use { response ->
             check(response.isSuccessful) { "校验清单下载失败：HTTP ${response.code}" }
             response.body.string()
         }
         val expected = checksumText.lineSequence().map(String::trim).firstNotNullOfOrNull { line ->
             val parts = line.split(Regex("\\s+"), limit = 2)
-            if (parts.size == 2 && parts[1].removePrefix("*").trim() == release.apkName) parts[0].lowercase() else null
-        } ?: error("Release 中没有 ${release.apkName} 的 SHA-256")
+            if (parts.size == 2 && parts[1].removePrefix("*").trim() == apkName) parts[0].lowercase() else null
+        } ?: error("Release 中没有 $apkName 的 SHA-256")
 
-        val partial = File(updateDirectory, "${release.apkName}.part")
-        val target = File(updateDirectory, release.apkName)
-        client.newCall(request(release.apkUrl)).execute().use { response ->
+        val partial = File(updateDirectory, "$apkName.part")
+        val target = File(updateDirectory, apkName)
+        client.newCall(request(apkUrl)).execute().use { response ->
             check(response.isSuccessful) { "APK 下载失败：HTTP ${response.code}" }
             val total = response.body.contentLength().coerceAtLeast(0)
             response.body.byteStream().use { input ->
@@ -105,7 +143,12 @@ internal class AppUpdateManager(
         check(actual.equals(expected, true)) { "APK SHA-256 校验失败，下载文件已删除" }
         if (target.exists()) target.delete()
         check(partial.renameTo(target)) { "无法保存已校验的 APK" }
-        check(signingDigests(archivePackageInfo(target)) == signingDigests(currentPackageInfo())) {
+        val archiveInfo = archivePackageInfo(target)
+        check(archiveInfo.packageName == expectedPackageName) {
+            target.delete()
+            "APK 包名不匹配，已阻止安装"
+        }
+        check(signingDigests(archiveInfo) == signingDigests(currentPackageInfo())) {
             target.delete()
             "APK 签名与当前 sai 不一致，已阻止安装"
         }
@@ -148,6 +191,33 @@ internal class AppUpdateManager(
             apkUrl = assetUrl(apkName) ?: return null,
             checksumsUrl = assetUrl("SHA256SUMS.txt") ?: return null,
         )
+    }
+
+    private fun parseApkAsset(root: JsonObject, assetName: String): SaiApkAsset? {
+        val tag = (root["tag_name"] as? JsonPrimitive)?.contentOrNull ?: return null
+        val assets = root["assets"] as? JsonArray ?: return null
+        fun assetUrl(name: String) = assets.mapNotNull { it as? JsonObject }.firstNotNullOfOrNull { asset ->
+            if ((asset["name"] as? JsonPrimitive)?.contentOrNull == name) {
+                (asset["browser_download_url"] as? JsonPrimitive)?.contentOrNull
+            } else null
+        }
+        return SaiApkAsset(
+            tag = tag,
+            pageUrl = (root["html_url"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
+            apkName = assetName,
+            apkUrl = assetUrl(assetName) ?: return null,
+            checksumsUrl = assetUrl("SHA256SUMS.txt") ?: return null,
+        )
+    }
+
+    private fun releaseRoots(): List<JsonObject> {
+        val releaseRequest = request("https://api.github.com/repos/${BuildConfig.GITHUB_REPOSITORY}/releases?per_page=20")
+        return client.newCall(releaseRequest).execute().use { response ->
+            val body = response.body.string()
+            check(response.isSuccessful) { "GitHub Release 检查失败：HTTP ${response.code}" }
+            val roots = json.parseToJsonElement(body) as? JsonArray ?: error("GitHub Release 返回格式无效")
+            roots.mapNotNull { it as? JsonObject }
+        }
     }
 
     private fun request(url: String): Request {

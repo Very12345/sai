@@ -7,6 +7,8 @@ import com.phoneagent.runtime.RunRequest
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.io.RandomAccessFile
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 
 data class GitHubCliStatus(
@@ -15,6 +17,7 @@ data class GitHubCliStatus(
     val login: String? = null,
     val avatarUrl: String? = null,
     val detail: String = "",
+    val authenticated: Boolean = false,
 )
 
 /** Keystore-backed GitHub CLI facade. Tokens are injected only into the child process. */
@@ -23,6 +26,7 @@ class GitHubCliManager(
     private val runtime: LinuxRuntime,
     private val secrets: SecretStore,
     private val workspace: File,
+    private val authDirectory: File,
 ) {
     private val mutex = Mutex()
 
@@ -56,7 +60,11 @@ class GitHubCliManager(
         installer.install().getOrElse { return@withLock Result.failure(it) }
         val observedCode = AtomicReference<String?>(null)
         val loginOutput = StringBuilder()
-        val command = githubDeviceLoginCommand()
+        authDirectory.mkdirs()
+        authDirectory.listFiles()?.forEach(::eraseAndDelete)
+        val tokenFile = File(authDirectory, "token-${UUID.randomUUID()}")
+        val guestTokenFile = "/run/sai-github-auth/${tokenFile.name}"
+        val command = githubDeviceLoginCommand(guestTokenFile)
         runCatching {
             val result = runtime.runStreaming(
                 RunRequest(
@@ -66,6 +74,7 @@ class GitHubCliManager(
                     timeoutMillis = 10 * 60_000L,
                     outputLimitBytes = 200_000,
                     environment = mapOf("GH_PAGER" to "cat"),
+                    trustedBinds = mapOf(authDirectory.absolutePath to "/run/sai-github-auth"),
                 ),
             ) { output ->
                 val searchable = synchronized(loginOutput) {
@@ -78,10 +87,17 @@ class GitHubCliManager(
                 }
             }
             check(result.exitCode == 0) { sanitize(result.stderr.ifBlank { result.stdout }) }
-            val token = TOKEN_RESULT.find(result.stdout)?.groupValues?.getOrNull(1)
-                ?: error("GitHub 设备登录完成，但未能取得临时凭据")
-            secrets.put(TOKEN_ALIAS, token.toCharArray())
+            val token = tokenFile.takeIf(File::isFile)?.readText()?.trim()
+                ?.takeIf { it.length >= 20 && it.none(Char::isWhitespace) }
+                ?: error("GitHub 授权已完成，但 gh 未返回可保存的凭据，请重试")
+            try {
+                secrets.put(TOKEN_ALIAS, token.toCharArray())
+            } finally {
+                eraseAndDelete(tokenFile)
+            }
             statusLocked()
+        }.also {
+            eraseAndDelete(tokenFile)
         }
     }
 
@@ -111,9 +127,14 @@ class GitHubCliManager(
         val account = runGh(listOf("api", "user", "--jq", "[.login,.avatar_url]|@tsv"), token, 30_000)
         return if (account.exitCode == 0) {
             val fields = sanitize(account.stdout).trim().split('\t', limit = 2)
-            GitHubCliStatus(true, version, fields.firstOrNull(), fields.getOrNull(1), "已登录")
+            GitHubCliStatus(true, version, fields.firstOrNull(), fields.getOrNull(1), "已登录", authenticated = true)
         } else {
-            GitHubCliStatus(true, version, detail = "凭据已保存，但当前无法验证：${sanitize(account.stderr).take(160)}")
+            GitHubCliStatus(
+                installed = true,
+                version = version,
+                detail = "已登录，账户资料暂时无法刷新：${sanitize(account.stderr).take(120)}",
+                authenticated = true,
+            )
         }
     }
 
@@ -135,20 +156,39 @@ class GitHubCliManager(
 
     private fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"
 
+    private fun eraseAndDelete(file: File) {
+        if (!file.isFile) return
+        runCatching {
+            RandomAccessFile(file, "rw").use { output ->
+                val zeros = ByteArray(4_096)
+                var remaining = output.length()
+                output.seek(0)
+                while (remaining > 0) {
+                    val count = minOf(remaining, zeros.size.toLong()).toInt()
+                    output.write(zeros, 0, count)
+                    remaining -= count
+                }
+                output.fd.sync()
+            }
+        }
+        runCatching { file.delete() }
+    }
+
     companion object {
         private const val TOKEN_ALIAS = "github:github.com:token"
         private val DEVICE_CODE = Regex("(?<![A-Z0-9])[A-Z0-9]{4}-[A-Z0-9]{4}(?![A-Z0-9])")
-        private val TOKEN_RESULT = Regex("SAI_GH_TOKEN=([^\\s]+)")
     }
 }
 
-internal fun githubDeviceLoginCommand(): String =
+internal fun githubDeviceLoginCommand(tokenFile: String = "/run/sai-github-auth/token"): String =
     """
+        umask 077
         gh_config=${'$'}(mktemp -d)
         trap 'rm -rf "${'$'}gh_config"' EXIT
         export GH_CONFIG_DIR="${'$'}gh_config"
         export BROWSER=echo
         printf 'Y\n' | gh auth login --hostname github.com --git-protocol https --web --skip-ssh-key --insecure-storage
-        printf '\nSAI_GH_TOKEN='
-        gh auth token --hostname github.com
+        gh auth token --hostname github.com > ${shellSingleQuote(tokenFile)}
     """.trimIndent()
+
+private fun shellSingleQuote(value: String): String = "'${value.replace("'", "'\\''")}'"

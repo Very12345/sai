@@ -287,6 +287,9 @@ class MainActivity : ComponentActivity() {
         viewModel.refreshAllFilesAccess()
         viewModel.refreshTaskPetPreference()
         viewModel.refreshVoiceModelPack()
+        // Browser-based GitHub device authorization completes outside sai. Refreshing on every
+        // return makes a newly persisted Keystore credential visible without reopening Settings.
+        viewModel.refreshGitHubCli()
     }
 
     private fun initializeVoice() {
