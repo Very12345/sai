@@ -76,7 +76,19 @@ h1 span { background: linear-gradient(95deg, #84edff 0%, #7f8cff 48%, #ff73b2 10
 .hero-trust { display: flex; flex-wrap: wrap; gap: 8px 19px; color: var(--muted); font-size: 12px; }
 .hero-trust span::before { content: "✓"; margin-right: 6px; color: var(--green); }
 
-.hero-stage { position: relative; min-height: 650px; display: grid; place-items: center; perspective: 1200px; }
+.hero-stage { position: relative; min-height: 650px; margin: 0; display: grid; place-items: center; perspective: 1200px; }
+.hero-poster { min-height: 510px; }
+.poster-frame { position: relative; z-index: 2; width: min(650px, 100%); overflow: hidden; border: 1px solid rgba(130, 212, 255, .3); border-radius: 28px; background: #071026; box-shadow: 0 50px 120px rgba(0, 0, 0, .52), 0 0 80px rgba(64, 122, 255, .13); transform: rotateY(-5deg) rotateX(2deg); }
+.poster-frame::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), inset 0 -70px 80px rgba(2,5,15,.44); }
+.poster-frame img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.poster-frame figcaption { position: absolute; z-index: 2; right: 24px; bottom: 20px; left: 24px; display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
+.poster-frame figcaption span { color: #8defff; font-size: 9px; font-weight: 800; letter-spacing: .13em; }
+.poster-frame figcaption b { color: #fff; font-size: 11px; }
+.poster-badge { position: absolute; z-index: 4; min-width: 190px; padding: 13px 15px; display: flex; flex-direction: column; border: 1px solid rgba(107, 194, 255, .25); border-radius: 14px; background: rgba(9, 15, 31, .88); box-shadow: 0 18px 50px rgba(0,0,0,.36); backdrop-filter: blur(18px); }
+.poster-badge span { color: var(--cyan); font-size: 8px; font-weight: 800; letter-spacing: .14em; }
+.poster-badge b { margin-top: 3px; font-size: 11px; }
+.poster-runtime { right: -15px; bottom: 50px; }
+.poster-core { left: -20px; top: 42px; }
 .stage-ring { position: absolute; border: 1px solid rgba(86, 171, 255, .13); border-radius: 50%; }
 .ring-a { width: 570px; height: 570px; box-shadow: inset 0 0 80px rgba(84, 90, 255, .035); }
 .ring-b { width: 430px; height: 430px; border-style: dashed; animation: spin 30s linear infinite; }
@@ -295,7 +307,15 @@ footer { border-top: 1px solid var(--line); background: #060912; }
   .hero-lead { font-size: 15px; }
   .hero-actions { flex-direction: column; }
   .button { width: 100%; }
-  .hero-stage { min-height: 590px; transform: scale(.9); margin-inline: -12px; }
+  .hero-stage { min-height: 360px; margin-inline: 0; transform: none; }
+  .hero-poster { min-height: 360px; }
+  .poster-frame { border-radius: 20px; transform: none; }
+  .poster-frame figcaption { right: 14px; bottom: 12px; left: 14px; }
+  .poster-frame figcaption b { display: none; }
+  .poster-badge { min-width: 145px; padding: 9px 11px; }
+  .poster-badge b { font-size: 9px; }
+  .poster-core { left: 8px; top: 12px; }
+  .poster-runtime { right: 8px; bottom: 8px; }
   .phone { height: 610px; }
   .dsh-float { left: 0; }
   .runtime-float { right: 0; }
