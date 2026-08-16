@@ -3,80 +3,200 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta name="theme-color" content="#090b19" />
-  <meta name="description" content="sai — 把本地编码 Agent、Debian 工具链和安全审批装进手机。" />
-  <title>sai · 随身本地编码 Agent</title>
+  <meta name="theme-color" content="#080b16" />
+  <meta name="description" content="sai 是以 DeepSeek Harness 为 Agent 内核、在 Android 本地运行 Debian、Git、终端、文件工具与扩展生态的移动编码工作台。" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://very12345.github.io/sai/" />
+  <meta property="og:title" content="sai 1.2.0 · 随身本地编码 Agent" />
+  <meta property="og:description" content="把 DeepSeek Harness、Debian 工作区、Git、终端、Agent 浏览器与插件生态装进手机。" />
+  <meta property="og:image" content="https://very12345.github.io/sai/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="sai 1.2.0 · 随身本地编码 Agent" />
+  <meta name="twitter:description" content="移动端优先、本地执行、可审核、可扩展。" />
+  <meta name="twitter:image" content="https://very12345.github.io/sai/og.png" />
+  <title>sai 1.2.0 · 随身本地编码 Agent</title>
   <link rel="icon" href="sai.svg" />
   <link rel="stylesheet" href="styles.css" />
-  <link rel="stylesheet" href="enhancements.css" />
 </head>
 <body>
-  <div class="aurora aurora-a"></div><div class="aurora aurora-b"></div>
-  <nav class="nav shell">
-    <a class="brand" href="#top"><img src="sai.svg" alt="" /><span>sai</span></a>
-    <div class="nav-links"><a href="#experience">体验</a><a href="#features">能力</a><a href="#security">边界</a><a href="#download">下载</a></div>
-    <a class="ghost" data-repo href="https://github.com/Very12345/sai">GitHub <span>↗</span></a>
-  </nav>
+  <div class="page-glow glow-one"></div><div class="page-glow glow-two"></div><div class="noise"></div>
+  <header class="nav-wrap">
+    <nav class="nav shell" aria-label="主导航">
+      <a class="brand" href="#top"><img src="sai.svg" alt="" /><span>sai</span><small>1.2.0</small></a>
+      <button class="nav-toggle" type="button" aria-label="展开导航" aria-expanded="false">☰</button>
+      <div class="nav-links">
+        <a href="#overview">项目</a><a href="#architecture">架构</a><a href="#capabilities">能力</a><a href="#limits">边界</a><a href="#roadmap">路线图</a><a href="#download">下载</a>
+      </div>
+      <a class="nav-github" data-repo href="https://github.com/Very12345/sai">GitHub <span>↗</span></a>
+    </nav>
+  </header>
+
   <main id="top">
     <section class="hero shell">
       <div class="hero-copy reveal">
-        <div class="eyebrow"><i></i> DeepSeek Harness 内核 · Android 本地工作区</div>
-        <h1>让想法，<br /><span>从掌心扬帆。</span></h1>
-        <p>sai 是运行在 Android 上的本地编码 Agent。它以官方 DeepSeek Harness 为唯一 Agent 引擎，把 Debian、项目终端、Git、Agent 浏览器、多模态路由与 DSH 插件生态放进一个安全、可审核的移动工作台。</p>
-        <div class="actions"><a class="primary" data-mobile-download href="#download">下载 Android APK <span>↓</span></a><a class="secondary" data-desktop-download href="#download">获取 Windows 桌面端</a></div>
-        <div class="meta"><span>sai GPLv3</span><span>DSH MIT</span><span>Android 10+</span><span>BYO API Key</span><span>无云端中继</span></div>
-      </div>
-      <div class="hero-visual reveal delay">
-        <div class="orbit orbit-a"></div><div class="orbit orbit-b"></div>
-        <div class="phone">
-          <div class="phone-bar"><span>9:41</span><b>sai</b><span>● ●●</span></div>
-          <div class="agent-head"><img src="sai.svg" alt="sai" /><div><strong>sai</strong><small>本地环境已就绪</small></div><i></i></div>
-          <div class="session-row"><span>登录界面与后端测试</span><em>运行中</em></div>
-          <div class="task"><span>正在工作</span><em>2 / 4</em><h3>构建登录页并运行测试</h3><div class="thought">正在分析项目结构与最新工具结果…</div><div class="tool"><b>›_</b><span>pytest -q</span><mark>通过</mark></div></div>
-          <div class="composer"><p>给 sai 发送消息…</p><div><b>＋</b><span>◈ 自动批准</span><i></i><span>DeepSeek V4 · High⌄</span><b>↑</b></div></div>
+        <a class="release-chip" data-release-page href="#download"><i></i><span>第一个正式版</span><b>v1.2.0</b><em>查看发布说明 →</em></a>
+        <p class="kicker">MOBILE LOCAL CODING AGENT · POWERED BY DEEPSEEK HARNESS</p>
+        <h1>让代码能力，<br /><span>从掌心扬帆。</span></h1>
+        <p class="hero-lead">sai 是为 Android 重新设计的本地编码 Agent。模型负责推理，手机本地负责项目文件、Git、终端、Debian 工具链、浏览器操作与审批；会话、工具编排和上下文由官方 DeepSeek Harness 驱动。</p>
+        <div class="hero-actions">
+          <a class="button button-primary" data-mobile-download href="#download">下载 Android 正式版 <span>↓</span></a>
+          <a class="button button-secondary" href="#overview">先了解它能做什么</a>
         </div>
-        <div class="desktop-card"><div class="traffic"><i></i><i></i><i></i></div><strong>sai Desktop</strong><small>局域网连接 · 项目与会话同步</small><div class="desktop-grid"><span>sai</span><b>项目文件</b><b>基础对话流</b><b>安全配对</b></div></div>
-        <div class="pet"><span>✦</span><img src="sai.svg" alt="任务宠物" /><small>正在划船执行任务</small></div>
+        <div class="hero-trust"><span>GPLv3 开源</span><span>DSH MIT</span><span>Android 10+</span><span>BYO API Key</span><span>本地优先</span></div>
+      </div>
+
+      <div class="hero-stage reveal delay" aria-label="sai 移动端界面示意">
+        <div class="stage-ring ring-a"></div><div class="stage-ring ring-b"></div>
+        <div class="phone">
+          <div class="phone-status"><span>9:41</span><b>sai</b><span>● ●●</span></div>
+          <div class="phone-head"><img src="sai.svg" alt="" /><div><strong>sai</strong><small>本地环境已就绪</small></div><button aria-label="项目文件">▱</button></div>
+          <div class="phone-session"><div><small>默认项目</small><b>完善登录页与 API</b></div><span>运行中</span></div>
+          <div class="phone-turn">
+            <div class="turn-title"><span>当前工作</span><em>2 / 4</em></div>
+            <h3>实现登录界面并验证后端</h3>
+            <p>正在检查项目结构与最近一次工具结果…</p>
+            <div class="tool-row"><b>›_</b><span>python -m pytest</span><mark>8 passed</mark></div>
+            <div class="diff-row"><b>+ 124</b><b>− 18</b><span>3 个文件</span></div>
+          </div>
+          <div class="phone-composer"><p>给 sai 发送消息…</p><div><button>＋</button><span>Workspace Write</span><i></i><span>DeepSeek · High</span><button>↑</button></div></div>
+        </div>
+        <div class="runtime-float"><span>LOCAL RUNTIME</span><b>Debian 13 · Git · Python</b><small>应用私有工作区</small></div>
+        <div class="dsh-float"><span>AGENT CORE</span><b>DeepSeek Harness</b><small>会话 · 工具 · 事件 · 压缩</small></div>
+        <div class="pet-float"><img src="sai.svg" alt="" /><span>任务正在航行</span></div>
       </div>
     </section>
-    <section class="ticker"><div>DeepSeek Harness <i>✦</i> Compose <i>✦</i> Debian 13 <i>✦</i> Git <i>✦</i> Agent Browser <i>✦</i> Vision Routing <i>✦</i> MCP <i>✦</i> Skills <i>✦</i> Local Voice <i>✦</i></div></section>
-    <section id="experience" class="section shell">
-      <div class="section-title reveal"><span>01 / MOBILE FIRST</span><h2>不是缩小的电脑界面，<br />是为触屏重做的 Agent。</h2></div>
-      <div class="experience-grid">
-        <article class="feature feature-large reveal"><div class="badge">多任务</div><h3>项目、会话和任务并行前进</h3><p>运行、排队、审批、暂停一眼可见；结构化思考与工具调用自动折叠，移动屏幕只留下核心进展。</p><div class="mini-tasks"><div><i class="run"></i><b>重构登录 API</b><span>运行中</span></div><div><i class="wait"></i><b>修复 Markdown 渲染</b><span>排队</span></div><div><i class="done"></i><b>生成测试报告</b><span>完成</span></div></div></article>
-        <article class="feature reveal"><div class="badge cyan">本地 Linux</div><h3>Debian 随身运行</h3><p>PRoot 用户态环境支持 Bash、Git、Python 与可选开发工具链。工作区、权限和密钥留在手机。</p><pre><span>$</span> python -m pytest<br/><span class="ok">8 passed</span> in 1.24s</pre></article>
-        <article class="feature reveal"><div class="badge pink">多模型</div><h3>你的模型，你的选择</h3><p>兼容 OpenAI、Anthropic、Gemini 与主流兼容端点。模型能力、推理档位和人民币费用按会话保存。</p><div class="model-pills"><span>DeepSeek</span><span>Qwen</span><span>Claude</span><span>Gemini</span><span>OpenRouter</span></div></article>
+
+    <section class="proof-strip">
+      <div class="shell proof-grid">
+        <div><strong>100%</strong><span>项目与执行环境留在手机</span></div>
+        <div><strong>3</strong><span>分级权限与危险操作审批</span></div>
+        <div><strong>10+</strong><span>首批内置 DSH 功能插件</span></div>
+        <div><strong>0</strong><span>sai 自建云端中继</span></div>
       </div>
     </section>
-    <section id="features" class="section shell">
-      <div class="section-title reveal"><span>02 / DEEPSEEK HARNESS</span><h2>官方 DSH 内核，<br />移动端原生外壳。</h2><p>sai 不再维护平行的 Agent loop。会话、工具、事件和上下文由 DeepSeek Harness 驱动，Android 能力通过受限桥和 Cordis 插件接入；保留 DSH 的 MIT 许可证与来源声明。</p></div>
-      <div class="capabilities">
-        <article><b>01</b><h3>文件与代码</h3><p>资源管理器、Sora 编辑器、搜索替换、Diff 审批、Git 检查点和消息级撤回。</p></article>
-        <article><b>02</b><h3>可见的扩展生态</h3><p>MCP、Skills 与 DSH 插件统一管理；“已安装”页同时展示内置运行时插件和用户扩展。</p></article>
-        <article><b>03</b><h3>Agent 浏览器</h3><p>按项目隔离的后台 WebView，支持 DOM 观察、点击、输入、提交与截图；网页内容始终标记为不可信。</p></article>
-        <article><b>04</b><h3>可卸载离线语音</h3><p>Voice Pack 提供流式识别与终稿校正，可独立安装或卸载；语音通话支持持续倾听、工具朗读和插话转向。</p></article>
-        <article><b>05</b><h3>辅助识图</h3><p>纯文本主模型收到图片时，优先调用同一提供商视觉模型生成结构化观察，不会偷换会话模型。</p></article>
-        <article><b>06</b><h3>安全审批</h3><p>请求批准、风险批准与完全访问三档策略。危险操作不能由桌面端远程代批。</p></article>
-        <article><b>07</b><h3>GitHub 与精选市场</h3><p>内置 gh 与浏览器设备码登录；DSH 插件来自 awesome-dsh-plugin 人工维护目录，安装前仍由 sai 本地预检。</p></article>
-        <article><b>08</b><h3>桌面协作</h3><p>局域网扫码配对，Windows 端浏览项目、编辑文件并跟随基础对话流。</p></article>
-        <article><b>09</b><h3>DeepSeek 优化模式</h3><p>预装可卸载的 Anchored Standard 与 Router Standard：前者锚定首轮工具轨迹，后者为构建、修复及 Flash 模糊任务选择稳定行为带；均保持实验性且不会强制改写会话。</p></article>
+
+    <section id="overview" class="section shell">
+      <div class="section-heading reveal">
+        <div><span>01 · WHAT IS SAI</span><h2>不是手机里的聊天框，<br />而是一套可工作的本地 Agent 系统。</h2></div>
+        <p>它把模型推理与本地执行分开：你配置自己的模型 API，sai 在设备内管理代码、运行命令、保存会话、审核修改并组织扩展。适合移动办公、轻量开发、远程排障和随时继续电脑上的项目。</p>
+      </div>
+      <div class="use-grid">
+        <article class="use-main reveal"><span class="card-label">从需求到可验证结果</span><h3>一句话发起任务，过程仍然可见、可停、可撤回。</h3><p>Agent 可以创建多文件项目、修改代码、运行测试、检查 Diff、建立 Git 检查点，并在后台继续工作。工具状态会折叠成移动端友好的摘要，而不是占满整个屏幕。</p><div class="flow"><span>描述目标</span><i>→</i><span>调用工具</span><i>→</i><span>运行验证</span><i>→</i><span>审核变更</span></div></article>
+        <article class="use-card reveal"><b>01</b><h3>随时写与修</h3><p>快速制作网页、Python 服务、脚本、文档或小型原型；也可以进入已有 Git 项目定位问题。</p></article>
+        <article class="use-card reveal"><b>02</b><h3>本地掌控</h3><p>项目、终端输出、会话事件和工具执行都在手机。模型 API 只接收完成当前推理所需的上下文。</p></article>
+        <article class="use-card reveal"><b>03</b><h3>多模型协作</h3><p>每个会话固定自己的提供商、模型、推理档位与辅助视觉路线，不会切换会话后悄悄改变。</p></article>
+        <article class="use-card reveal"><b>04</b><h3>手机与电脑接力</h3><p>Windows 端通过局域网扫码配对，浏览项目、编辑文件并跟随基础会话流，无需上传项目到 sai 云端。</p></article>
       </div>
     </section>
-    <section id="security" class="section shell security">
-      <div class="security-copy reveal"><span>03 / CLEAR BOUNDARIES</span><h2>能力强大，边界清楚。</h2><p>PRoot 是 Linux 兼容层，不是 Docker 级安全沙箱。sai 通过私有工作区、Android Keystore、分级审批、不可变事件日志和扩展预检降低风险，并明确提示无法撤回的外部副作用。</p><a data-security href="#">阅读安全说明 →</a></div>
-      <div class="security-cards reveal"><div><i>✓</i><span>API Key 不注入 Debian</span></div><div><i>✓</i><span>写操作串行并展示 Diff</span></div><div><i>✓</i><span>扩展安装阻止路径逃逸</span></div><div><i>✓</i><span>局域网连接端到端加密</span></div></div>
-    </section>
-    <section id="download" class="section shell download">
-      <div class="section-title reveal"><span>04 / DOWNLOAD</span><h2>手机与电脑，同一股风。</h2><p>GitHub Release 自动生成固定证书签名的 Android ARM64/x86_64 APK、Windows 安装程序、可卸载 Voice Pack、SBOM 和 SHA-256 校验清单。手机端可自动检查、下载并验证新版本，之后无需反复连接 USB。</p></div>
-      <div class="download-grid">
-        <a class="download-card mobile reveal" data-mobile-download href="#"><div class="platform">ANDROID</div><img src="sai.svg" alt="" /><div><h3>sai Mobile</h3><p>Android 10+ · ARM64</p></div><b>↓</b></a>
-        <a class="download-card reveal" data-desktop-download href="#"><div class="platform">WINDOWS</div><div class="windows">⊞</div><div><h3>sai Desktop</h3><p>Windows 10/11 · x64</p></div><b>↓</b></a>
-        <a class="download-card voice reveal" data-voice-download href="#"><div class="platform">OPTIONAL</div><div class="voice-mark">≋</div><div><h3>Voice Pack</h3><p>中英离线识别 · 可卸载</p></div><b>↓</b></a>
+
+    <section id="architecture" class="section architecture-section">
+      <div class="shell">
+        <div class="section-heading reveal">
+          <div><span>02 · ARCHITECTURE</span><h2>原生 Android 外壳，<br />DeepSeek Harness 内核。</h2></div>
+          <p>sai 1.2.0 以官方 DeepSeek Harness 作为唯一活动 Agent 引擎。Compose 管设备能力与安全边界，DSH 管会话、模型流、工具编排、Steer、上下文压缩和追加式事件。</p>
+        </div>
+        <div class="architecture-board reveal">
+          <div class="arch-column native"><span>ANDROID NATIVE</span><h3>sai Compose Shell</h3><ul><li>项目、文件与多标签终端</li><li>Keystore、Room 与系统权限</li><li>前台任务、通知与语音服务</li><li>浏览器、分享与设备能力</li></ul></div>
+          <div class="arch-link"><b>受限桥</b><i>↔</i><small>Loopback + 临时凭据</small></div>
+          <div class="arch-column harness"><span>AGENT ENGINE</span><h3>DeepSeek Harness</h3><ul><li>会话与追加事件</li><li>模型与工具调用</li><li>Steer、审批与恢复</li><li>上下文压缩和插件槽位</li></ul></div>
+          <div class="arch-link"><b>本地执行</b><i>↔</i><small>项目级工作目录</small></div>
+          <div class="arch-column runtime"><span>LOCAL RUNTIME</span><h3>Debian + PRoot</h3><ul><li>Git、Bash、Python</li><li>Node、Rust、Go、Java</li><li>C/C++ 与 LaTeX 工具链</li><li>PTY 与后台任务</li></ul></div>
+        </div>
+        <div class="license-note reveal"><b>开源关系</b><p>sai 应用及第一方插件使用 GPLv3；DeepSeek Harness 保留其 MIT 许可证、版权与第三方声明。sai 对 DSH 做移动端集成与界面适配，不冒充其官方 Android 客户端。</p></div>
       </div>
-      <p class="release-note" id="release-note">正在读取最新版本…</p>
+    </section>
+
+    <section id="capabilities" class="section shell">
+      <div class="section-heading reveal">
+        <div><span>03 · CAPABILITIES</span><h2>编码 Agent 需要的关键环节，<br />在一块屏幕里闭环。</h2></div>
+        <p>功能不是孤立按钮，而是围绕“理解项目—修改—执行—验证—审核—继续”的完整任务链组合。</p>
+      </div>
+      <div class="cap-grid">
+        <article class="cap-card reveal"><span>CODE</span><h3>文件、编辑与 Git</h3><p>层级资源管理器、项目 ZIP 导入、代码编辑、搜索替换、Diff、分支、检查点、消息级撤回和项目删除。</p><ul><li>项目创建自动 Git 初始化</li><li>外部文件先安全导入内部工作区</li><li>HTML、PDF、图片和文本预览分享</li></ul></article>
+        <article class="cap-card reveal"><span>RUNTIME</span><h3>Debian 与项目终端</h3><p>内置基础 Debian、Git 与 Node/DSH 运行时；Python、Node.js、Rust、Go、Java、C/C++、LaTeX 等按需安装。</p><ul><li>项目独立多标签 PTY</li><li>安装前模拟空间与依赖</li><li>后台任务可停止、恢复和通知</li></ul></article>
+        <article class="cap-card reveal"><span>MODEL</span><h3>提供商、模型与推理</h3><p>兼容 OpenAI、Anthropic、Gemini、DeepSeek、阿里云及兼容协议，模型与推理配置绑定到会话。</p><ul><li>提供商 → 模型选择与搜索</li><li>按真实能力显示推理档位</li><li>Token、缓存命中与人民币费用</li></ul></article>
+        <article class="cap-card reveal"><span>WEB</span><h3>Agent 专用浏览器</h3><p>浏览器不是给用户浏览网页的普通入口，而是 Agent 可观察、点击、输入、提交、截图和下载的受控工具。</p><ul><li>项目隔离的网页状态</li><li>DOM 节点过期保护</li><li>页面文本始终视作不可信输入</li></ul></article>
+        <article class="cap-card reveal"><span>VOICE & VISION</span><h3>离线语音与辅助识图</h3><p>可卸载 Voice Pack 提供中英流式识别；纯文本模型可通过用户选择的视觉模型获得结构化图片观察。</p><ul><li>语音输入与连续通话</li><li>朗读必须由模型调用 speak</li><li>视觉路由不偷换主会话模型</li></ul></article>
+        <article class="cap-card reveal"><span>SAFETY</span><h3>审批、审计与恢复</h3><p>读取、工作区写入和完全访问三档权限；危险删除、包安装、外部修改与不可撤回副作用需要明确提示。</p><ul><li>密钥只保存在 Android Keystore</li><li>事件日志追加保存</li><li>扩展安装前静态预检</li></ul></article>
+      </div>
+    </section>
+
+    <section class="section extension-section">
+      <div class="shell extension-layout">
+        <div class="extension-copy reveal"><span>04 · EXTENSIBLE BY DESIGN</span><h2>核心保持克制，<br />能力通过插件继续生长。</h2><p>sai 将 Android 工具、UI、模型适配、语音、视觉、市场、宠物和产物渲染拆成 DSH 插件。MCP 与 Skills 市场继续保留，第三方 DSH 插件来自人工维护的 awesome-dsh-plugin 目录，并在手机本地做兼容性预检。</p><a class="text-link" data-repo href="#">查看源码与插件结构 →</a></div>
+        <div class="plugin-stack reveal">
+          <div><b>dsh-sai-android</b><span>文件 · 终端 · 浏览器 · 设备桥</span><i>内置</i></div>
+          <div><b>dsh-sai-models</b><span>多提供商 · 推理 · 费用</span><i>内置</i></div>
+          <div><b>dsh-sai-voice</b><span>离线识别 · 通话 · speak</span><i>可选模型包</i></div>
+          <div><b>MCP / Skills</b><span>工具服务 · 项目知识 · 工作流</span><i>可导入</i></div>
+          <div><b>第三方 DSH 插件</b><span>精选目录 · 预检 · 更新 · 回滚</span><i>默认禁用</i></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="limits" class="section shell">
+      <div class="section-heading reveal">
+        <div><span>05 · HONEST LIMITS</span><h2>第一个正式版，<br />也把不适合做的事说清楚。</h2></div>
+        <p>“正式版”表示发行、升级和核心任务链达到可用基线，不表示移动设备突然拥有服务器级隔离与无限资源。</p>
+      </div>
+      <div class="limits-grid">
+        <article class="limit-card critical reveal"><span>安全边界</span><h3>PRoot 不是安全沙箱</h3><p>它提供 Linux 兼容性，但不能提供 Docker、cgroup、内核隔离或真正 root。不要执行来源不明的仓库与脚本。</p></article>
+        <article class="limit-card reveal"><span>上游成熟度</span><h3>DSH 仍处于早期阶段</h3><p>sai 已稳定封装固定版本并提供回滚，但 DeepSeek Harness 本身仍是快速发展的开发者预览项目，升级需通过兼容矩阵。</p></article>
+        <article class="limit-card reveal"><span>设备资源</span><h3>大型编译会受手机限制</h3><p>内存、温度、电量和存储会限制大型 Rust/C++/Java 构建。它适合移动开发与验证，不替代高性能工作站。</p></article>
+        <article class="limit-card reveal"><span>安装方式</span><h3>当前以侧载为主</h3><p>APK 不以 Google Play 为首发渠道。系统安装确认、权限对话框、生物识别和支付验证都必须由用户完成。</p></article>
+        <article class="limit-card reveal"><span>扩展风险</span><h3>精选不等于绝对安全</h3><p>MCP、Skills、插件、网页与模型输出都属于不可信输入。安装前检查许可证、权限与源码仍然必要。</p></article>
+        <article class="limit-card reveal"><span>桌面连接</span><h3>仍在强化长期配对</h3><p>当前局域网加密连接已可用；桌面重启后的持久身份、自动发现与无感重连仍是后续重点。</p></article>
+      </div>
+      <div class="fit-grid reveal">
+        <div><b>适合</b><p>移动热修、小型原型、Python/Web 项目、代码审查、测试验证、远程排障、在外继续已有任务。</p></div>
+        <div><b>不适合</b><p>运行不可信恶意代码、Docker 工作负载、内核开发、超大型本地编译、要求无人值守绕过系统安全确认的自动化。</p></div>
+      </div>
+    </section>
+
+    <section id="roadmap" class="section roadmap-section">
+      <div class="shell">
+        <div class="section-heading reveal">
+          <div><span>06 · WHERE IT CAN GO</span><h2>下一段航程，<br />从“能执行”走向“更懂项目”。</h2></div>
+          <p>未来扩展优先考虑可验证收益、安全风险和手机资源，而不是盲目增加入口。</p>
+        </div>
+        <div class="roadmap">
+          <article class="reveal"><span>P0 · 代码理解与安全</span><h3>LSP、增量索引与安全扫描</h3><p>按项目提供符号、引用、诊断、重命名；提交前扫描密钥、依赖漏洞和危险配置，并把测试证据作为完成门槛。</p><div><i>高收益</i><i>近期优先</i></div></article>
+          <article class="reveal"><span>P1 · 复现与协作</span><h3>任务复现包、远程 Git/PR 与来源记忆</h3><p>导出不含密钥的完整任务证据；把 issue、分支、测试和草稿 PR 串联；长期记忆保留来源、时间与可撤销状态。</p><div><i>协作能力</i><i>需要细粒度审批</i></div></article>
+          <article class="reveal"><span>P2 · 连续性与效率</span><h3>模型路由、定时任务与跨设备同步</h3><p>依据能力、延迟、费用和任务风险选择模型；提供可见计划任务；端到端加密同步设置、摘要与复现包。</p><div><i>长期方向</i><i>默认不上传项目</i></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="download" class="section shell download-section">
+      <div class="download-panel reveal">
+        <div class="download-intro"><span>07 · DOWNLOAD</span><h2>从第一个正式版，开始航行。</h2><p>所有产物由 GitHub Actions 构建并附带 SHA-256、SBOM 与许可证。手机端可自行检查、下载、校验并升级，后续无需反复连接 USB。</p><div class="requirements"><b>Android 10+</b><b>ARM64 推荐</b><b>约 1 GB 基础空间</b><b>模型 API Key</b></div></div>
+        <div class="download-list">
+          <a data-mobile-download href="#"><div class="download-icon"><img src="sai.svg" alt="" /></div><span><b>sai Mobile</b><small>Android ARM64 · 主程序</small></span><em>下载 APK ↓</em></a>
+          <a data-desktop-download href="#"><div class="download-icon windows">⊞</div><span><b>sai Desktop</b><small>Windows 10/11 · x64</small></span><em>下载安装包 ↓</em></a>
+          <a data-voice-download href="#"><div class="download-icon voice">≋</div><span><b>Voice Pack</b><small>约 253 MB · 中英离线识别 · 可卸载</small></span><em>下载模块 ↓</em></a>
+          <a data-checksums href="#"><div class="download-icon checksum">#</div><span><b>SHA-256 校验清单</b><small>验证下载完整性</small></span><em>查看清单 ↗</em></a>
+        </div>
+        <div class="release-status" id="release-note"><i></i><span>正在读取最新正式版…</span></div>
+      </div>
+
+      <div class="faq reveal">
+        <h2>常见问题</h2>
+        <details><summary>sai 会把项目上传到自己的服务器吗？</summary><p>不会。sai 没有项目云端中继；工作区、Debian、会话和工具状态默认保留在设备。模型请求、用户启用的 Web 工具、远程 MCP、软件包下载和 Git 远程操作会访问相应服务。</p></details>
+        <details><summary>可以直接使用 ChatGPT、Claude 等消费订阅吗？</summary><p>不可以。sai 使用用户配置的 API Key 或兼容服务端点，不接入消费订阅登录，也不会代管模型额度。</p></details>
+        <details><summary>为什么 Voice Pack 独立下载？</summary><p>离线中英语音模型约 253 MB。独立模块让不使用语音的用户保持更小的安装体积，也可以随时卸载而不影响文字 Agent。</p></details>
+        <details><summary>它能控制其他手机应用吗？</summary><p>只有在用户手动启用无障碍服务并对当前任务授权后，Agent 才能请求受限设备动作；密码框、支付、生物识别、系统安全窗口与 Android 权限确认不可绕过。</p></details>
+      </div>
     </section>
   </main>
-  <footer class="shell"><a class="brand" href="#top"><img src="sai.svg" alt="" /><span>sai</span></a><p>sai: GPLv3 · DeepSeek Harness: MIT · Built for work that moves.</p><span id="year"></span></footer>
+
+  <footer>
+    <div class="shell footer-grid">
+      <div><a class="brand" href="#top"><img src="sai.svg" alt="" /><span>sai</span></a><p>Built for work that moves.</p></div>
+      <div><b>项目</b><a data-repo href="#">GitHub</a><a data-release-page href="#">Releases</a><a data-security href="#">安全说明</a></div>
+      <div><b>许可</b><span>sai · GPLv3</span><span>DeepSeek Harness · MIT</span><span>第三方声明随 Release 发布</span></div>
+      <div><b>状态</b><span>第一个正式版 · v1.2.0</span><span>Android 10+ · 侧载发布</span><span id="year"></span></div>
+    </div>
+  </footer>
   <script src="app.js"></script>
 </body>
 </html>

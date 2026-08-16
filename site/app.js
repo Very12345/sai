@@ -3,27 +3,70 @@ const repo = location.hostname.endsWith('github.io') && pathParts[0]
   ? `${location.hostname.split('.')[0]}/${pathParts[0]}`
   : 'Very12345/sai';
 const repoUrl = `https://github.com/${repo}`;
-document.querySelectorAll('[data-repo]').forEach(a => a.href = repoUrl);
-document.querySelectorAll('[data-security]').forEach(a => a.href = `${repoUrl}/blob/main/SECURITY.md`);
-document.querySelectorAll('[data-mobile-download],[data-desktop-download],[data-voice-download]').forEach(a => a.href = `${repoUrl}/releases`);
+const latestUrl = `${repoUrl}/releases/latest`;
+const fallbackAssets = {
+  mobile: `${latestUrl}/download/sai-android-arm64.apk`,
+  desktop: `${latestUrl}/download/sai-desktop-windows-setup.exe`,
+  voice: `${latestUrl}/download/sai-voice-pack-zh-en.apk`,
+  checksums: `${latestUrl}/download/SHA256SUMS.txt`
+};
+
+document.querySelectorAll('[data-repo]').forEach((link) => { link.href = repoUrl; });
+document.querySelectorAll('[data-release-page]').forEach((link) => { link.href = latestUrl; });
+document.querySelectorAll('[data-security]').forEach((link) => { link.href = `${repoUrl}/blob/main/SECURITY.md`; });
+document.querySelectorAll('[data-mobile-download]').forEach((link) => { link.href = fallbackAssets.mobile; });
+document.querySelectorAll('[data-desktop-download]').forEach((link) => { link.href = fallbackAssets.desktop; });
+document.querySelectorAll('[data-voice-download]').forEach((link) => { link.href = fallbackAssets.voice; });
+document.querySelectorAll('[data-checksums]').forEach((link) => { link.href = fallbackAssets.checksums; });
 document.getElementById('year').textContent = `© ${new Date().getFullYear()}`;
-const observer = new IntersectionObserver(entries => entries.forEach(entry => {
-  if (entry.isIntersecting) entry.target.classList.add('visible');
-}), { threshold: .12 });
-document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
-if (!repo.startsWith('OWNER/')) {
-  fetch(`https://api.github.com/repos/${repo}/releases?per_page=10`, { headers: { Accept: 'application/vnd.github+json' } })
-    .then(r => r.ok ? r.json() : Promise.reject())
-    .then(releases => {
-      const release = releases.find(item => !item.draft);
-      if (!release) throw new Error('no release');
-      document.getElementById('release-note').textContent = `最新版本 ${release.tag_name} · 发布于 ${new Date(release.published_at).toLocaleDateString('zh-CN')}`;
-      const mobile = release.assets.find(a => /arm64.*\.apk$/i.test(a.name));
-      const desktop = release.assets.find(a => /setup.*\.exe$|\.msi$/i.test(a.name));
-      const voice = release.assets.find(a => /sai-voice-pack-zh-en\.apk$/i.test(a.name));
-      if (mobile) document.querySelectorAll('[data-mobile-download]').forEach(a => a.href = mobile.browser_download_url);
-      if (desktop) document.querySelectorAll('[data-desktop-download]').forEach(a => a.href = desktop.browser_download_url);
-      if (voice) document.querySelectorAll('[data-voice-download]').forEach(a => a.href = voice.browser_download_url);
-    })
-    .catch(() => { document.getElementById('release-note').textContent = '前往 GitHub Releases 获取最新构建与校验文件'; });
-} else document.getElementById('release-note').textContent = '部署后将自动连接 GitHub Releases';
+
+const navToggle = document.querySelector('.nav-toggle');
+const navLinks = document.querySelector('.nav-links');
+if (navToggle && navLinks) {
+  navToggle.addEventListener('click', () => {
+    const open = navLinks.classList.toggle('open');
+    navToggle.setAttribute('aria-expanded', String(open));
+    navToggle.setAttribute('aria-label', open ? '收起导航' : '展开导航');
+    navToggle.textContent = open ? '×' : '☰';
+  });
+  navLinks.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => {
+    navLinks.classList.remove('open');
+    navToggle.setAttribute('aria-expanded', 'false');
+    navToggle.setAttribute('aria-label', '展开导航');
+    navToggle.textContent = '☰';
+  }));
+}
+
+if ('IntersectionObserver' in window) {
+  const observer = new IntersectionObserver((entries) => entries.forEach((entry) => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      observer.unobserve(entry.target);
+    }
+  }), { threshold: .1, rootMargin: '0px 0px -28px' });
+  document.querySelectorAll('.reveal').forEach((element) => observer.observe(element));
+} else {
+  document.querySelectorAll('.reveal').forEach((element) => element.classList.add('visible'));
+}
+
+const releaseNote = document.getElementById('release-note');
+fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+  headers: { Accept: 'application/vnd.github+json' }
+})
+  .then((response) => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
+  .then((release) => {
+    const asset = (pattern) => release.assets.find((item) => pattern.test(item.name));
+    const mobile = asset(/sai-android-arm64\.apk$|arm64.*\.apk$/i);
+    const desktop = asset(/sai-desktop-windows-setup\.exe$|setup.*\.exe$|\.msi$/i);
+    const voice = asset(/sai-voice-pack-zh-en\.apk$/i);
+    const checksums = asset(/SHA256SUMS\.txt$/i);
+    if (mobile) document.querySelectorAll('[data-mobile-download]').forEach((link) => { link.href = mobile.browser_download_url; });
+    if (desktop) document.querySelectorAll('[data-desktop-download]').forEach((link) => { link.href = desktop.browser_download_url; });
+    if (voice) document.querySelectorAll('[data-voice-download]').forEach((link) => { link.href = voice.browser_download_url; });
+    if (checksums) document.querySelectorAll('[data-checksums]').forEach((link) => { link.href = checksums.browser_download_url; });
+    const date = new Date(release.published_at).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+    releaseNote.querySelector('span').textContent = `${release.tag_name} · ${date} 发布 · ${release.assets.length} 个可下载产物`;
+  })
+  .catch(() => {
+    releaseNote.querySelector('span').textContent = '暂时无法读取版本信息，可直接前往 GitHub Releases 下载';
+  });
