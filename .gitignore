@@ -8,6 +8,7 @@ captures/
 .externalNativeBuild/
 .cxx/
 **/node_modules/
+**/target/
 keystore.properties
 *.jks
 *.keystore

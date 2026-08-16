@@ -7,8 +7,8 @@ android {
         applicationId = "com.sai.voice.pack"
         minSdk = 29
         targetSdk = 36
-        versionCode = 11_026
-        versionName = "1.1.26"
+        versionCode = 12_000
+        versionName = "1.2.0"
     }
     val saiSigningStoreFile = providers.gradleProperty("saiSigningStoreFile").orNull
     val saiSigningStorePassword = providers.environmentVariable("SAI_ANDROID_STORE_PASSWORD").orNull
