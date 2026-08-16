@@ -3,8 +3,19 @@
 ## DeepSeek Harness
 
 sai embeds the official `@deepseek-ai/dsh 0.1.0-rc.6` runtime from audited source commit
-`47f943859bef60e4160492346772ded9b24f765a`. DeepSeek Harness is MIT licensed. Its license,
+`de944f41071912c5c9bf00eb3ad11b581eb5136b`. DeepSeek Harness is MIT licensed. Its license,
 npm lockfile and transitive package notices are included in the offline runtime and release SBOM.
+
+## Mobile Harness clients
+
+- Codex mobile GUI is derived from
+  [`friuns2/codex-mobile`](https://github.com/friuns2/codex-mobile) under the MIT License.
+  It remains a presentation/client layer and drives the bundled official Codex runtime through
+  Codex `app-server`; it does not replace the Codex agent loop.
+- Claude Code mobile GUI is derived from
+  [`sugyan/claude-code-webui`](https://github.com/sugyan/claude-code-webui) under the MIT License.
+  sai replaces its pinned CLI dependency at runtime with the audited bundled Claude Code version
+  and retains the upstream license in the offline runtime.
 
 ## DeepSeek Reasonix historical architectural reference
 

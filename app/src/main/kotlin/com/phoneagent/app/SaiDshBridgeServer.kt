@@ -1,19 +1,15 @@
 package com.phoneagent.app
 
 import android.content.Context
-import android.content.ContentValues
 import android.content.Intent
 import android.app.NotificationManager
-import android.os.Environment
 import android.net.Uri
-import android.provider.MediaStore
-import android.webkit.MimeTypeMap
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import com.phoneagent.app.browser.AgentBrowserSession
 import com.phoneagent.app.device.PhoneAgentAccessibilityService
 import com.phoneagent.app.service.VoiceConversationService
+import com.phoneagent.app.service.AgentForegroundService
 import com.phoneagent.dsh.DshBridgeEndpoint
 import java.io.BufferedInputStream
 import java.io.EOFException
@@ -31,6 +27,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -58,6 +56,8 @@ class SaiDshBridgeServer(
     private val browsers = mutableMapOf<String, AgentBrowserSession>()
     private val _taskStatuses = MutableStateFlow<Map<String, SaiDshTaskStatus>>(emptyMap())
     val taskStatuses: StateFlow<Map<String, SaiDshTaskStatus>> = _taskStatuses.asStateFlow()
+    private val _taskEvents = MutableSharedFlow<SaiDshTaskStatus>(extraBufferCapacity = 64)
+    val taskEvents: SharedFlow<SaiDshTaskStatus> = _taskEvents
 
     @Synchronized fun endpoint(): DshBridgeEndpoint {
         val socket = server ?: ServerSocket(0, 8, InetAddress.getByName("127.0.0.1")).also { opened ->
@@ -107,7 +107,6 @@ class SaiDshBridgeServer(
             )
             "speech queued"
         }
-        "export" -> exportArtifact(payload)
         "open_url" -> openUrl(payload)
         "github" -> {
             val args = payload["args"]?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty()
@@ -138,11 +137,19 @@ class SaiDshBridgeServer(
                 ?: error("task status requires sessionId")
             val phase = payload["phase"]?.jsonPrimitive?.contentOrNull?.take(40) ?: "working"
             val detail = payload["detail"]?.jsonPrimitive?.contentOrNull.orEmpty().takeLast(240)
+            val event = SaiDshTaskStatus(sessionId, phase, detail, System.currentTimeMillis())
+            if (phase !in setOf("idle", "completed", "cancelled", "failed")) {
+                ContextCompat.startForegroundService(
+                    context,
+                    Intent(context, AgentForegroundService::class.java).setAction(AgentForegroundService.ACTION_DSH),
+                )
+            }
+            _taskEvents.tryEmit(event)
             if (phase in setOf("idle", "completed", "cancelled", "failed")) {
                 _taskStatuses.update { it - sessionId }
             } else {
                 _taskStatuses.update { current ->
-                    current + (sessionId to SaiDshTaskStatus(sessionId, phase, detail, System.currentTimeMillis()))
+                    current + (sessionId to event)
                 }
             }
             "status received"
@@ -179,87 +186,6 @@ class SaiDshBridgeServer(
         else -> error("Android capability '$operation' is not enabled in this build")
     }
 
-    private fun exportArtifact(payload: JsonObject): String {
-        val rawPath = payload["path"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-        require(rawPath.isNotBlank()) { "export path is required" }
-        val source = resolveExportSource(rawPath)
-        val requestedName = payload["displayName"]?.jsonPrimitive?.contentOrNull?.trim()
-        val displayName = (requestedName?.takeIf(String::isNotBlank) ?: source.name).also { name ->
-            require(name !in setOf(".", "..") && '/' !in name && '\\' !in name && name.length <= 180) {
-                "invalid export display name"
-            }
-        }
-        val mime = payload["mimeType"]?.jsonPrimitive?.contentOrNull?.trim()
-            ?.takeIf { it.matches(Regex("^[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+$")) }
-            ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(source.extension.lowercase())
-            ?: "application/octet-stream"
-        return when (payload["action"]?.jsonPrimitive?.contentOrNull ?: "save") {
-            "open" -> {
-                context.startActivity(
-                    Intent(context, ArtifactPreviewActivity::class.java)
-                        .putExtra(ArtifactPreviewActivity.EXTRA_PATH, source.absolutePath)
-                        .putExtra(ArtifactPreviewActivity.EXTRA_MIME, mime)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-                buildJsonObject {
-                    put("ok", true)
-                    put("action", "open")
-                    put("displayName", displayName)
-                }.toString()
-            }
-            "save" -> {
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
-                    put(MediaStore.MediaColumns.MIME_TYPE, mime)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/sai")
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
-                }
-                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                    ?: error("unable to create Downloads export")
-                try {
-                    context.contentResolver.openOutputStream(uri, "w")?.use { output ->
-                        source.inputStream().buffered().use { input -> input.copyTo(output, 128 * 1024) }
-                    } ?: error("unable to open Downloads export")
-                    values.clear()
-                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    context.contentResolver.update(uri, values, null, null)
-                } catch (error: Throwable) {
-                    context.contentResolver.delete(uri, null, null)
-                    throw error
-                }
-                buildJsonObject {
-                    put("ok", true)
-                    put("action", "save")
-                    put("displayName", displayName)
-                    put("location", "Downloads/sai/$displayName")
-                    put("uri", uri.toString())
-                }.toString()
-            }
-            "share" -> {
-                val shareRoot = File(context.cacheDir, "exports").apply { mkdirs() }.canonicalFile
-                val staged = File(shareRoot, displayName).canonicalFile
-                require(staged.parentFile == shareRoot) { "share path escaped the export cache" }
-                source.copyTo(staged, overwrite = true)
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", staged)
-                val send = Intent(Intent.ACTION_SEND)
-                    .setType(mime)
-                    .putExtra(Intent.EXTRA_STREAM, uri)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                context.startActivity(
-                    Intent.createChooser(send, "通过其他应用分享 $displayName")
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-                buildJsonObject {
-                    put("ok", true)
-                    put("action", "share")
-                    put("displayName", displayName)
-                    put("uri", uri.toString())
-                }.toString()
-            }
-            else -> error("export action must be open, save or share")
-        }
-    }
-
     private fun openUrl(payload: JsonObject): String {
         val rawUrl = payload["url"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
         val uri = Uri.parse(rawUrl)
@@ -277,23 +203,6 @@ class SaiDshBridgeServer(
             put("destination", destination)
             put("url", rawUrl)
         }.toString()
-    }
-
-    private fun resolveExportSource(rawPath: String): File {
-        val filesRoot = context.filesDir.canonicalFile
-        val rootfs = File(filesRoot, "runtime/debian").canonicalFile
-        val candidates = buildList {
-            add(File(rawPath))
-            if (rawPath.startsWith('/')) add(File(rootfs, rawPath.removePrefix("/")))
-        }
-        val source = candidates.asSequence()
-            .mapNotNull { runCatching { it.canonicalFile }.getOrNull() }
-            .firstOrNull(File::isFile)
-            ?: error("export source does not exist: $rawPath")
-        require(source.path.startsWith(filesRoot.path + File.separator)) {
-            "export source must be inside the sai private workspace or Debian home"
-        }
-        return source
     }
 
     private suspend fun browser(payload: JsonObject): String {

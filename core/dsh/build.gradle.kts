@@ -12,6 +12,7 @@ android {
 
 dependencies {
     implementation(project(":core:runtime"))
+    implementation(project(":core:harness"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

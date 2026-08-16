@@ -12,8 +12,8 @@ android {
         applicationId = "com.phoneagent.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 12_012
-        versionName = "1.2.0"
+        versionCode = 13_000
+        versionName = "1.3.0"
         // Local/device builds must be able to find optional release modules too.
         // CI may override this for forks with -PsaiGithubRepository=owner/repo.
         val githubRepository = providers.gradleProperty("saiGithubRepository").orNull
@@ -86,6 +86,7 @@ dependencies {
     implementation(project(":core:runtime"))
     implementation(project(":core:data"))
     implementation(project(":core:extensions"))
+    implementation(project(":core:harness"))
     implementation(project(":core:dsh"))
     implementation(project(":core:terminal"))
 

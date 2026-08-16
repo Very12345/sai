@@ -1,26 +1,38 @@
 {
   "schemaVersion": 1,
-  "runtimeVersion": "sai-dsh-0.1.0-rc.6-node-24.19.0-r51",
+  "runtimeVersion": "sai-dsh-0.1.0-rc.6-node-24.19.0-r57",
   "dshVersion": "0.1.0-rc.6",
   "nodeVersion": "24.19.0",
   "sourceCommit": "de944f41071912c5c9bf00eb3ad11b581eb5136b",
   "sourceRepository": "https://github.com/Very12345/deepseek-harness",
-  "webUiVariant": "sai-mobile-r51",
+  "webUiVariant": "sai-mobile-r57",
+  "clientSources": {
+    "codexMobile": {
+      "repository": "https://github.com/friuns2/codex-mobile",
+      "commit": "fac2291b0e606c869d4760f56c0f49172214cb79",
+      "license": "MIT"
+    },
+    "claudeCodeWebUi": {
+      "repository": "https://github.com/sugyan/claude-code-webui",
+      "commit": "9109263873cfc2a6eb0a160396fdfd60c2d6a37f",
+      "license": "MIT"
+    }
+  },
   "packageLockSha256": {
-    "x86_64": "e757721757c1e15b89cab65e3f7cf8d63f5e63033aef1abeebe5afbacdbddec8",
-    "arm64-v8a": "e8a11896df7d0bcf64fbe64dc6ce3e7df3b6618999d2d13ccb55beefc05fea71"
+    "x86_64": "0138fb63ad55f4fcfedc0c6796441d7d6f2f0b44caa1bf900652a73ae9bfd9b7",
+    "arm64-v8a": "74a0dc6e1b8ab44efb1da6749086358c1c88abc938d6450c69ef627d18db7f33"
   },
   "port": 3080,
   "archives": {
     "x86_64": {
       "asset": "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-x86_64.tar.xz",
-      "sha256": "be52d31332d0f0fcccc6a1c3378782bf6cb57becbec3c9460e7f4c7ba939697c",
-      "bytes": 59188084
+      "sha256": "86c18fc395bfaa36cdfcd73e465e0aacec8a0f06d5d22d0d51a1281cc05aea03",
+      "bytes": 218847124
     },
     "arm64-v8a": {
       "asset": "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-arm64-v8a.tar.xz",
-      "sha256": "799b8af77bee805295dd2987393b0ac81ba30e39480cdea331e5b90c935703df",
-      "bytes": 57482360
+      "sha256": "7ca3bf99667f52105685c96cebea42489931020bf00bdd0084e399a7f133105a",
+      "bytes": 203363100
     }
   }
 }

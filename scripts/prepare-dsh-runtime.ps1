@@ -2,8 +2,10 @@ param(
     [string]$CacheRoot = 'D:\Code\sai-dsh-runtime',
     [string]$NodeVersion = '24.19.0',
     [string]$DshVersion = '0.1.0-rc.6',
-    [int]$RuntimeRevision = 51,
+    [int]$RuntimeRevision = 57,
     [string]$DshForkRoot = 'D:\Code\deepseek-harness',
+    [string]$CodexGuiRoot = 'D:\Code\sai-gui-research\codex-mobile',
+    [string]$ClaudeGuiRoot = 'D:\Code\sai-gui-research\claude-code-webui',
     [switch]$ReuseInstalledStages
 )
 
@@ -69,6 +71,32 @@ function Install-SaiMobileWebUi([string]$AppRoot, [string]$ForkRoot) {
     Copy-Item -LiteralPath $webDistSource -Destination $webDistTarget -Recurse -Force
 }
 
+function Install-SaiHarnessGuis([string]$AppRoot, [string]$CodexRoot, [string]$ClaudeRoot) {
+    $codexDist = Join-Path $CodexRoot 'dist'
+    $codexCli = Join-Path $CodexRoot 'dist-cli'
+    $claudeDist = Join-Path $ClaudeRoot 'backend\dist'
+    foreach ($required in @(
+        (Join-Path $codexDist 'index.html'),
+        (Join-Path $codexCli 'index.js'),
+        (Join-Path $claudeDist 'cli\node.js'),
+        (Join-Path $claudeDist 'static\index.html')
+    )) {
+        if (-not (Test-Path -LiteralPath $required)) {
+            throw "Missing built Harness GUI artifact: $required"
+        }
+    }
+    $guiRoot = Join-Path $AppRoot 'gui'
+    if (Test-Path -LiteralPath $guiRoot) { Remove-Item -LiteralPath $guiRoot -Recurse -Force }
+    $codexTarget = Join-Path $guiRoot 'codex'
+    $claudeTarget = Join-Path $guiRoot 'claude\dist'
+    New-Item -ItemType Directory -Force -Path $codexTarget, $claudeTarget | Out-Null
+    Copy-Item -LiteralPath $codexDist -Destination (Join-Path $codexTarget 'dist') -Recurse -Force
+    Copy-Item -LiteralPath $codexCli -Destination (Join-Path $codexTarget 'dist-cli') -Recurse -Force
+    Get-ChildItem -LiteralPath $claudeDist | Copy-Item -Destination $claudeTarget -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $CodexRoot 'LICENSE') -Destination (Join-Path $codexTarget 'LICENSE') -Force
+    Copy-Item -LiteralPath (Join-Path $ClaudeRoot 'LICENSE') -Destination (Join-Path $guiRoot 'claude\LICENSE') -Force
+}
+
 $closures = @{}
 $lockHashes = @{}
 foreach ($target in @(
@@ -94,11 +122,25 @@ foreach ($target in @(
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "dependencies": {
+    "dependencies": {
+    "@composio/client": "0.1.0-alpha.66",
+    "@hono/node-server": "1.19.2",
     "@img/sharp-libvips-linux-$($target.NpmCpu)": "1.3.2",
     "@img/sharp-linux-$($target.NpmCpu)": "0.35.3",
     "@lydell/node-pty-linux-$($target.NpmCpu)": "1.1.0",
+    "@anthropic-ai/claude-code": "2.1.233",
+    "@anthropic-ai/claude-code-linux-$($target.NpmCpu)": "2.1.233",
+    "@anthropic-ai/claude-agent-sdk": "0.3.233",
     "@deepseek-ai/dsh": "$DshVersion",
+    "@openai/codex": "0.147.0",
+    "@openai/codex-linux-$($target.NpmCpu)": "npm:@openai/codex@0.147.0-linux-$($target.NpmCpu)",
+    "commander": "14.0.1",
+    "express": "5.2.1",
+    "firebase": "12.17.1",
+    "highlight.js": "11.12.0",
+    "hono": "4.9.7",
+    "qrcode-terminal": "0.12.0",
+    "ws": "8.21.3",
     "@sai/dsh-android": "file:vendor/android",
     "@sai/dsh-artifacts": "file:vendor/artifacts",
     "@sai/dsh-credentials": "file:vendor/credentials",
@@ -171,7 +213,10 @@ foreach ($target in @(
         $env:npm_config_libc = 'glibc'
         # DSH depends on sharp and node-pty. Linux prebuilds are not present when npm
         # assembles the closure on Windows, so the platform packages above are explicit.
-        Invoke-Checked 'npm.cmd' @('install','--omit=dev','--include=optional','--ignore-scripts','--no-audit','--no-fund','--package-lock=true','--force') $app
+        # Every required native platform closure is explicit above. Omitting
+        # transitive optionals avoids downloading the Agent SDK's redundant
+        # embedded Claude binary (the GUI deliberately uses our pinned CLI).
+        Invoke-Checked 'npm.cmd' @('install','--omit=dev','--omit=optional','--ignore-scripts','--no-audit','--no-fund','--package-lock=true','--force') $app
     } finally {
         $env:npm_config_os = $oldOs; $env:npm_config_cpu = $oldCpu; $env:npm_config_libc = $oldLibc
     }
@@ -190,6 +235,7 @@ foreach ($target in @(
     [System.IO.File]::WriteAllText((Join-Path $voicePreset 'preset.yml'), "name: sai Voice`ndescription: Continuous offline voice conversation with mandatory speak tool output.`n", $utf8NoBom)
 
     Install-SaiMobileWebUi $app $DshForkRoot
+    Install-SaiHarnessGuis $app $CodexGuiRoot $ClaudeGuiRoot
 
     $ptyPackage = Join-Path $app "node_modules\@lydell\node-pty-linux-$($target.NpmCpu)\pty.node"
     $ptyPrebuildRoot = Join-Path $app 'node_modules\node-pty\prebuilds'
@@ -234,6 +280,11 @@ $sourceCommit = (& git -C $DshForkRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') {
     throw "Cannot resolve audited DSH fork commit from $DshForkRoot"
 }
+$codexGuiCommit = (& git -C $CodexGuiRoot rev-parse HEAD).Trim()
+$claudeGuiCommit = (& git -C $ClaudeGuiRoot rev-parse HEAD).Trim()
+if ($codexGuiCommit -notmatch '^[0-9a-f]{40}$' -or $claudeGuiCommit -notmatch '^[0-9a-f]{40}$') {
+    throw "Cannot resolve audited Harness GUI commits"
+}
 
 $manifest = [ordered]@{
     schemaVersion = 1
@@ -243,6 +294,10 @@ $manifest = [ordered]@{
     sourceCommit = $sourceCommit
     sourceRepository = 'https://github.com/Very12345/deepseek-harness'
     webUiVariant = "sai-mobile-r$RuntimeRevision"
+    clientSources = [ordered]@{
+        codexMobile = [ordered]@{ repository = 'https://github.com/friuns2/codex-mobile'; commit = $codexGuiCommit; license = 'MIT' }
+        claudeCodeWebUi = [ordered]@{ repository = 'https://github.com/sugyan/claude-code-webui'; commit = $claudeGuiCommit; license = 'MIT' }
+    }
     packageLockSha256 = $lockHashes
     port = 3080
     archives = $closures

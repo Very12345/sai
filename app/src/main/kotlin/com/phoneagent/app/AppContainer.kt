@@ -14,6 +14,8 @@ import com.phoneagent.runtime.BundledGitHubCli
 import com.phoneagent.dsh.DshRuntimeProvisioner
 import com.phoneagent.dsh.DshRuntimeSupervisor
 import com.phoneagent.dsh.DshApiClient
+import com.phoneagent.dsh.DshHarnessAdapter
+import com.phoneagent.harness.HarnessRegistry
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,6 +60,18 @@ class AppContainer(
         },
     )
     val dshApi = DshApiClient(state = { dshRuntime.state.value })
+    val dshHarnessAdapter by lazy { DshHarnessAdapter(dshRuntime, dshApi) }
+    val harnessRegistry by lazy { HarnessRegistry(listOf(dshHarnessAdapter)) }
+    val bundledCliHarnesses by lazy {
+        BundledCliHarnessController(runtime, dshProvisioner, providerSettings, File(application.filesDir, "harness-history"))
+    }
+    val harnessWebRuntime by lazy {
+        HarnessWebRuntimeSupervisor(runtime, dshProvisioner, dshWorkspaceRoot) {
+            val profile = providerSettings.profile.value
+            profile to providerSettings.credentialFor(profile.id)?.apiKey?.toCharArray()
+        }
+    }
+    val managerHarness by lazy { SaiManagerHarness(this) }
     val desktopConnection by lazy { DesktopConnectionManager(application, this) }
 }
 

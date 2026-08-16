@@ -24,6 +24,7 @@ include(
     ":core:runtime",
     ":core:data",
     ":core:extensions",
+    ":core:harness",
     ":core:dsh",
     ":core:terminal",
 )

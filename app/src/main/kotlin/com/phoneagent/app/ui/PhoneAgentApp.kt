@@ -1,6 +1,8 @@
 package com.phoneagent.app.ui
 
 import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
+import android.app.Activity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -33,18 +36,25 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddComment
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -83,6 +93,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.RestoreFromTrash
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -96,10 +112,16 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
@@ -115,6 +137,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Animatable
@@ -219,6 +242,7 @@ import com.phoneagent.app.BuildConfig
 import com.phoneagent.app.R
 import com.phoneagent.app.MainUiState
 import com.phoneagent.app.MainViewModel
+import com.phoneagent.app.CliPermissionMode
 import com.phoneagent.app.VoiceModelPack
 import com.phoneagent.app.TaskHandle
 import com.phoneagent.app.VoiceCallPhase
@@ -244,6 +268,7 @@ import io.noties.markwon.ext.tables.TablePlugin
 import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.html.HtmlPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
+import com.phoneagent.harness.HarnessKind
 
 private data class Destination(val section: MainSection, val label: String, val icon: ImageVector)
 
@@ -281,82 +306,18 @@ fun PhoneAgentApp(
     val configuration = LocalConfiguration.current
     val rootDensity = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(rootDensity) > 0
-    val wide = configuration.screenWidthDp >= 700 ||
-        (configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && configuration.screenWidthDp >= 600)
-    var sidebarOpen by remember { mutableStateOf(false) }
-    var dshMenuToggleNonce by remember { mutableStateOf(0) }
     var dshOverlayVisible by remember { mutableStateOf(false) }
+    var exitDialogVisible by remember { mutableStateOf(false) }
+    BackHandler {
+        if (state.section != MainSection.AGENT) viewModel.selectSection(MainSection.AGENT)
+        else exitDialogVisible = true
+    }
     Box(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxSize()) {
-            if (wide) {
-                ProjectSessionSidebar(state, viewModel, Modifier.width(292.dp).fillMaxHeight(), requestProjectZip = requestProjectZip)
-                Box(Modifier.fillMaxHeight().width(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
-                NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
-                    Spacer(Modifier.height(8.dp))
-                    destinations.forEach { destination ->
-                        NavigationRailItem(
-                            selected = state.section == destination.section,
-                            onClick = { viewModel.selectSection(destination.section) },
-                            icon = { Icon(destination.icon, destination.label) },
-                            label = { Text(destination.label, maxLines = 1) },
-                        )
-                    }
-                }
-                Box(Modifier.fillMaxHeight().width(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
-            }
-    Scaffold(
-        modifier = Modifier.weight(1f).fillMaxHeight(),
+        Scaffold(
+        modifier = Modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    if (!wide) IconButton(onClick = {
-                        if (state.section == MainSection.AGENT && state.dshRuntime.ready) {
-                            dshMenuToggleNonce += 1
-                        } else {
-                            sidebarOpen = true
-                        }
-                    }) {
-                        Icon(Icons.Default.Menu, "打开项目与会话")
-                    }
-                },
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            painterResource(R.drawable.ic_phone_agent),
-                            null,
-                            Modifier.size(40.dp),
-                            tint = Color.Unspecified,
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text("sai", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleLarge)
-                            Text(
-                                if (state.runtimeCapability?.available == true) "本地环境已就绪" else "本地环境待初始化",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (state.runtimeCapability?.available == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    if (state.selectedWorkspaceId != null) {
-                        IconButton(onClick = viewModel::openSelectedProjectFiles) {
-                            Icon(Icons.Default.FolderOpen, "打开当前项目目录")
-                        }
-                    }
-                    if (state.runState in setOf(AgentRunState.RUNNING, AgentRunState.WAITING_APPROVAL)) {
-                        IconButton(onClick = viewModel::stopAgent) { Icon(Icons.Default.Stop, "停止 Agent") }
-                    }
-                    // The in-app pet is drawn above the scaffold so its launch animation can
-                    // leave the app smoothly. Reserve a real action slot for it instead of
-                    // letting it cover the project-folder and stop buttons underneath.
-                    if (state.taskPetVisible && !sidebarOpen) Spacer(Modifier.width(82.dp))
-                },
-            )
-        },
         bottomBar = {
-            if (!wide && !imeVisible) NavigationBar(
+            if (!imeVisible) NavigationBar(
                 modifier = Modifier.navigationBarsPadding(),
                 containerColor = MaterialTheme.colorScheme.surface,
                 tonalElevation = 0.dp,
@@ -374,16 +335,16 @@ fun PhoneAgentApp(
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
             when (state.section) {
-                MainSection.AGENT -> DshAgentScreen(
+                MainSection.AGENT -> HarnessWorkbenchScreen(
                     state = state,
                     viewModel = viewModel,
-                    menuToggleNonce = dshMenuToggleNonce,
                     onOverlayVisibilityChanged = { dshOverlayVisible = it },
                     startVoiceInput = startVoiceInput,
                     finishVoiceInput = finishVoiceInput,
                     requestPhoneFiles = requestPhoneFiles,
+                    requestProjectZip = requestProjectZip,
                 )
-                MainSection.FILES -> FilesScreen(state, viewModel)
+                MainSection.FILES -> FilesScreen(state, viewModel, requestPhoneFiles)
                 MainSection.TERMINAL -> TerminalScreenV3(state, viewModel)
                 MainSection.BROWSER -> BrowserScreen(state, viewModel)
                 MainSection.EXTENSIONS -> ExtensionsScreen(state, viewModel, requestExtensionZip)
@@ -398,27 +359,9 @@ fun PhoneAgentApp(
             }
         }
     }
-        }
-        if (!wide && sidebarOpen) {
-            Box(
-                Modifier.fillMaxSize().background(Color.Black.copy(alpha = .32f)).clickable { sidebarOpen = false },
-            )
-            Surface(
-                modifier = Modifier.width(310.dp).fillMaxHeight().shadow(18.dp),
-                color = MaterialTheme.colorScheme.surface,
-            ) {
-                ProjectSessionSidebar(
-                    state = state,
-                    viewModel = viewModel,
-                    modifier = Modifier.fillMaxSize(),
-                    onNavigate = { sidebarOpen = false },
-                    requestProjectZip = requestProjectZip,
-                )
-            }
-        }
         if (
+            state.section == MainSection.AGENT &&
             state.taskPetVisible &&
-            !sidebarOpen &&
             !(state.section == MainSection.AGENT && dshOverlayVisible)
         ) {
             SaiPetDock(
@@ -519,6 +462,30 @@ fun PhoneAgentApp(
             dismissButton = { TextButton(onClick = viewModel::cancelRuntimePackageRequest) { Text("取消") } },
         )
     }
+    if (exitDialogVisible) AlertDialog(
+        onDismissRequest = { exitDialogVisible = false },
+        title = { Text("离开 sai？") },
+        text = { Text("活跃任务可以在前台服务中继续；彻底退出会保存可恢复状态并停止 Harness、语音和悬浮窗。") },
+        confirmButton = {
+            TextButton(onClick = {
+                exitDialogVisible = false
+                (context as? Activity)?.moveTaskToBack(true)
+            }) { Text("最小化并继续") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { exitDialogVisible = false }) { Text("取消") }
+                TextButton(onClick = {
+                    viewModel.stopEverythingAndExit {
+                        context.startActivity(Intent(context, com.phoneagent.app.MainActivity::class.java).apply {
+                            action = com.phoneagent.app.MainActivity.ACTION_EXIT_APPLICATION
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        })
+                    }
+                }) { Text("退出并停止", color = MaterialTheme.colorScheme.error) }
+            }
+        },
+    )
 }
 
 @Composable
@@ -534,10 +501,12 @@ private fun SaiPetDock(
             handle.runState in setOf(AgentRunState.RUNNING, AgentRunState.WAITING_APPROVAL)
     }
     val waitingApproval = busyTasks.any { it.runState == AgentRunState.WAITING_APPROVAL }
+        || state.dshTasks.values.any { it.phase == "waiting-approval" }
+    val totalBusyTasks = busyTasks.size + state.dshTasks.size
     val petMotion = when {
         state.voiceCallActive -> "冲浪倾听"
         waitingApproval -> "收帆等待审批"
-        busyTasks.isNotEmpty() -> "划船执行任务"
+        totalBusyTasks > 0 -> "划船执行任务"
         else -> "扬帆巡航"
     }
     var expanded by remember { mutableStateOf(false) }
@@ -614,9 +583,9 @@ private fun SaiPetDock(
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     }
-                    if (busyTasks.isEmpty()) {
+                    if (totalBusyTasks == 0) {
                         Text("当前没有运行中的任务", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else busyTasks.take(3).forEach { task ->
+                    } else busyTasks.take(2).forEach { task ->
                         Surface(
                             Modifier.fillMaxWidth().clickable { viewModel.selectSession(task.sessionId); expanded = false },
                             shape = MaterialTheme.shapes.small,
@@ -628,6 +597,25 @@ private fun SaiPetDock(
                                 Column(Modifier.weight(1f)) {
                                     Text(task.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge)
                                     Text(task.progressText.ifBlank { "正在运行" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+                                }
+                                IconButton(onClick = { viewModel.stopTask(task.sessionId) }, Modifier.size(28.dp)) {
+                                    Icon(Icons.Default.Stop, "停止任务", Modifier.size(17.dp), tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                    state.dshTasks.values.sortedByDescending { it.updatedAt }.take((2 - busyTasks.size).coerceAtLeast(1)).forEach { task ->
+                        Surface(
+                            Modifier.fillMaxWidth().clickable { viewModel.selectSession(task.sessionId); expanded = false },
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .72f),
+                        ) {
+                            Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(7.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("DSH · ${task.sessionId.take(8)}", maxLines = 1, style = MaterialTheme.typography.labelLarge)
+                                    Text(task.detail.ifBlank { task.phase }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
                                 }
                                 IconButton(onClick = { viewModel.stopTask(task.sessionId) }, Modifier.size(28.dp)) {
                                     Icon(Icons.Default.Stop, "停止任务", Modifier.size(17.dp), tint = MaterialTheme.colorScheme.error)
@@ -663,7 +651,7 @@ private fun SaiPetDock(
                 },
                 update = { pet ->
                     pet.theme = state.petTheme
-                    pet.taskCount = busyTasks.size
+                    pet.taskCount = totalBusyTasks
                     pet.waitingApproval = waitingApproval
                     pet.statusText = if (state.voiceCallActive && state.voiceCallTranscript.isNotBlank()) state.voiceCallTranscript else petMotion
                     pet.voiceActive = state.voiceCallActive
@@ -693,189 +681,6 @@ private fun formatBytes(value: Long?): String = when {
 }
 
 @Composable
-private fun ProjectSessionSidebar(
-    state: MainUiState,
-    viewModel: MainViewModel,
-    modifier: Modifier = Modifier,
-    onNavigate: () -> Unit = {},
-    requestProjectZip: () -> Unit = {},
-) {
-    var createProject by remember { mutableStateOf(false) }
-    var projectName by remember { mutableStateOf("") }
-    var projectMenuId by remember { mutableStateOf<String?>(null) }
-    var projectToDelete by remember { mutableStateOf<String?>(null) }
-    var sessionMenuId by remember { mutableStateOf<String?>(null) }
-    var sessionToDelete by remember { mutableStateOf<String?>(null) }
-    Column(modifier.background(MaterialTheme.colorScheme.surface)) {
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painterResource(R.drawable.ic_phone_agent),
-                null,
-                Modifier.size(36.dp),
-                tint = Color.Unspecified,
-            )
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text("sai", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("项目与任务", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = requestProjectZip) { Icon(Icons.Default.CloudDownload, "导入项目 ZIP") }
-            IconButton(onClick = { createProject = true }) { Icon(Icons.Default.Add, "新建项目") }
-        }
-        HorizontalDivider()
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp),
-        ) {
-            state.workspaces.forEach { workspace ->
-                item(key = "workspace:${workspace.id}") {
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .clickable { viewModel.selectWorkspace(workspace.id); onNavigate() }
-                            .background(
-                                if (workspace.id == state.selectedWorkspaceId) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = .55f)
-                                else Color.Transparent,
-                            )
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.Folder, null, Modifier.size(19.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(9.dp))
-                        Text(workspace.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Box {
-                            IconButton(onClick = { projectMenuId = workspace.id }, Modifier.size(32.dp)) {
-                                Icon(Icons.Default.MoreVert, "项目操作", Modifier.size(17.dp))
-                            }
-                            DropdownMenu(
-                                expanded = projectMenuId == workspace.id,
-                                onDismissRequest = { projectMenuId = null },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("删除项目", color = MaterialTheme.colorScheme.error) },
-                                    onClick = { projectToDelete = workspace.id; projectMenuId = null },
-                                    leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
-                                )
-                            }
-                        }
-                    }
-                }
-                val sessions = state.sessions.filter { it.workspaceId == workspace.id }
-                items(sessions, key = { "session:${it.id}" }) { session ->
-                    val handle = state.taskHandles[session.id]
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .clickable { viewModel.selectSession(session.id); onNavigate() }
-                            .background(
-                                if (session.id == state.selectedSessionId) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .6f)
-                                else Color.Transparent,
-                            )
-                            .padding(start = 28.dp, end = 8.dp, top = 9.dp, bottom = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        SessionStatus(handle, session.state)
-                        Spacer(Modifier.width(9.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(session.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-                            val progress = handle?.progressText?.takeIf(String::isNotBlank) ?: session.latestPreview
-                            if (progress.isNotBlank()) Text(
-                                progress,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Box {
-                            IconButton(onClick = { sessionMenuId = session.id }, Modifier.size(32.dp)) {
-                                Icon(Icons.Default.MoreVert, "会话操作", Modifier.size(17.dp))
-                            }
-                            DropdownMenu(
-                                expanded = sessionMenuId == session.id,
-                                onDismissRequest = { sessionMenuId = null },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text(if (session.pinned) "取消置顶" else "置顶会话") },
-                                    onClick = { viewModel.toggleSessionPinned(session.id); sessionMenuId = null },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("删除会话", color = MaterialTheme.colorScheme.error) },
-                                    onClick = { sessionToDelete = session.id; sessionMenuId = null },
-                                    leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        HorizontalDivider()
-        TextButton(
-            onClick = { viewModel.selectSection(MainSection.SETTINGS); onNavigate() },
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
-        ) {
-            Icon(Icons.Default.Settings, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("设置与运行环境")
-        }
-    }
-    if (createProject) AlertDialog(
-        onDismissRequest = { createProject = false },
-        title = { Text("新建项目") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("项目将创建在应用私有目录 Project/项目名，并自动初始化 Git main 分支和初始检查点。")
-                OutlinedTextField(
-                    value = projectName,
-                    onValueChange = { projectName = it },
-                    label = { CompactFieldLabel("项目名称") },
-                    singleLine = true,
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                viewModel.createProject(projectName)
-                createProject = false
-                projectName = ""
-            }) { Text("创建") }
-        },
-        dismissButton = { TextButton(onClick = { createProject = false }) { Text("取消") } },
-    )
-    sessionToDelete?.let { sessionId ->
-        val title = state.sessions.firstOrNull { it.id == sessionId }?.title ?: "此会话"
-        AlertDialog(
-            onDismissRequest = { sessionToDelete = null },
-            title = { Text("删除会话？") },
-            text = { Text("将删除“$title”的对话记录。正在运行的任务会先停止，此操作不可撤销。") },
-            confirmButton = {
-                Button(onClick = { viewModel.deleteSession(sessionId); sessionToDelete = null }) { Text("删除") }
-            },
-            dismissButton = { TextButton(onClick = { sessionToDelete = null }) { Text("取消") } },
-        )
-    }
-    projectToDelete?.let { workspaceId ->
-        val project = state.workspaces.firstOrNull { it.id == workspaceId }
-        if (project != null) AlertDialog(
-            onDismissRequest = { projectToDelete = null },
-            title = { Text("删除项目“${project.name}”？") },
-            text = {
-                Text("项目中的运行和排队任务会先停止；对话记录会删除，内部项目文件会移入 sai 私有回收站。外部 SAF 原目录不会被修改。")
-            },
-            confirmButton = {
-                Button(
-                    onClick = { viewModel.deleteProject(workspaceId); projectToDelete = null },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                ) { Text("删除项目") }
-            },
-            dismissButton = { TextButton(onClick = { projectToDelete = null }) { Text("取消") } },
-        )
-    }
-}
-
-@Composable
 private fun SessionStatus(handle: TaskHandle?, persistedState: String) {
     val state = handle?.runState ?: runCatching { AgentRunState.valueOf(persistedState) }.getOrDefault(AgentRunState.IDLE)
     when (state) {
@@ -889,6 +694,360 @@ private fun SessionStatus(handle: TaskHandle?, persistedState: String) {
 }
 
 @Composable
+private fun HarnessWorkbenchScreen(
+    state: MainUiState,
+    viewModel: MainViewModel,
+    onOverlayVisibilityChanged: (Boolean) -> Unit,
+    startVoiceInput: () -> Unit,
+    finishVoiceInput: (Boolean) -> Unit,
+    requestPhoneFiles: () -> Unit,
+    requestProjectZip: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            listOf(
+                HarnessKind.DSH to "DSH",
+                HarnessKind.CODEX to "Codex",
+                HarnessKind.CLAUDE_CODE to "Claude Code",
+            ).forEach { (kind, label) ->
+                FilterChip(
+                    selected = state.activeHarnessKind == kind,
+                    onClick = { viewModel.selectHarness(kind) },
+                    label = { Text(label, maxLines = 1) },
+                    leadingIcon = {
+                        Icon(
+                            when (kind) {
+                                HarnessKind.DSH -> Icons.Default.Hub
+                                HarnessKind.CODEX -> Icons.Default.Code
+                                HarnessKind.CLAUDE_CODE -> Icons.Default.Psychology
+                                HarnessKind.MANAGER -> Icons.Default.SmartToy
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp),
+                        )
+                    },
+                )
+            }
+            IconButton(onClick = viewModel::openSelectedProjectFiles) {
+                Icon(Icons.Default.FolderOpen, contentDescription = "项目文件")
+            }
+        }
+        when (state.activeHarnessKind) {
+            HarnessKind.DSH -> DshAgentScreen(
+                state = state,
+                viewModel = viewModel,
+                menuToggleNonce = 0,
+                onOverlayVisibilityChanged = onOverlayVisibilityChanged,
+                startVoiceInput = startVoiceInput,
+                finishVoiceInput = finishVoiceInput,
+                requestPhoneFiles = requestPhoneFiles,
+                modifier = Modifier.weight(1f),
+            )
+            HarnessKind.CODEX -> HarnessWebScreen(
+                kind = HarnessKind.CODEX,
+                state = state,
+                viewModel = viewModel,
+            )
+            HarnessKind.CLAUDE_CODE -> HarnessWebScreen(
+                kind = HarnessKind.CLAUDE_CODE,
+                state = state,
+                viewModel = viewModel,
+            )
+            HarnessKind.MANAGER -> OptionalHarnessLanding(
+                title = "sai 应用总管",
+                detail = "语音和悬浮文字使用独立总管，将任务委派给已安装的 Harness。",
+                command = "内置",
+                state = state,
+                viewModel = viewModel,
+            )
+        }
+    }
+}
+
+@Composable
+@SuppressLint("SetJavaScriptEnabled")
+private fun HarnessWebScreen(
+    kind: HarnessKind,
+    state: MainUiState,
+    viewModel: MainViewModel,
+) {
+    val runtime = state.harnessWebRuntimes[kind] ?: com.phoneagent.app.HarnessWebRuntimeState()
+    val context = LocalContext.current
+    val expectedPort = if (kind == HarnessKind.CODEX) 3090 else 3091
+    val title = if (kind == HarnessKind.CODEX) "Codex" else "Claude Code"
+    if (!runtime.ready || runtime.url == null) {
+        Column(
+            Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (runtime.phase != com.phoneagent.app.HarnessWebPhase.FAILED) CircularProgressIndicator()
+            else Icon(Icons.Default.ErrorOutline, null, Modifier.size(42.dp), tint = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.height(14.dp))
+            Text(runtime.detail.ifBlank { "正在准备 $title GUI" }, textAlign = TextAlign.Center)
+            if (runtime.phase == com.phoneagent.app.HarnessWebPhase.FAILED) {
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = { viewModel.restartHarnessWebRuntime(kind) }) { Text("重试") }
+            }
+        }
+        return
+    }
+    val trustedUrl = runtime.url
+    key(kind, trustedUrl) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { viewContext ->
+                WebView(viewContext).apply {
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.allowFileAccess = false
+                    settings.allowContentAccess = false
+                    settings.setSupportMultipleWindows(false)
+                    settings.javaScriptCanOpenWindowsAutomatically = false
+                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                            val uri = request.url
+                            if (uri.scheme == "http" && uri.host == "127.0.0.1" && uri.port == expectedPort) return false
+                            if (request.isForMainFrame && uri.scheme in setOf("http", "https")) {
+                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+                            }
+                            return true
+                        }
+                    }
+                    loadUrl(trustedUrl)
+                }
+            },
+            update = { webView -> if (webView.url == null) webView.loadUrl(trustedUrl) },
+        )
+    }
+}
+
+@Composable
+private fun CliHarnessScreen(
+    kind: HarnessKind,
+    state: MainUiState,
+    viewModel: MainViewModel,
+    requestPhoneFiles: () -> Unit,
+) {
+    val ui = state.cliHarnesses[kind] ?: com.phoneagent.app.CliHarnessUiState()
+    val title = if (kind == HarnessKind.CODEX) "Codex" else "Claude Code"
+    val listState = rememberLazyListState()
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    var projectMenu by remember { mutableStateOf(false) }
+    var providerMenu by remember { mutableStateOf(false) }
+    var modelMenu by remember { mutableStateOf(false) }
+    var permissionMenu by remember { mutableStateOf(false) }
+    var commandMenu by remember { mutableStateOf(false) }
+    var newProjectDialog by remember { mutableStateOf(false) }
+    var newProjectName by remember { mutableStateOf("") }
+    val selectedWorkspace = state.workspaces.firstOrNull { it.id == state.selectedWorkspaceId }
+    val discoveredModels = state.providerModels.filter { it.providerId == state.provider.id }
+    LaunchedEffect(ui.messages.size, ui.messages.lastOrNull()?.text) {
+        if (ui.messages.isNotEmpty()) listState.animateScrollToItem(ui.messages.lastIndex)
+    }
+    if (newProjectDialog) AlertDialog(
+        onDismissRequest = { newProjectDialog = false },
+        title = { Text("新建项目") },
+        text = { OutlinedTextField(newProjectName, { newProjectName = it }, singleLine = true, label = { Text("项目名称") }) },
+        confirmButton = { TextButton(onClick = {
+            if (newProjectName.isNotBlank()) viewModel.createProject(newProjectName)
+            newProjectName = ""; newProjectDialog = false
+        }) { Text("创建并初始化 Git") } },
+        dismissButton = { TextButton(onClick = { newProjectDialog = false }) { Text("取消") } },
+    )
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(modifier = Modifier.widthIn(max = 340.dp)) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (kind == HarnessKind.CODEX) Icons.Default.Code else Icons.Default.Psychology, null)
+                    Spacer(Modifier.width(10.dp)); Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = { viewModel.newCliHarnessThread(kind); scope.launch { drawerState.close() } },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                ) { Icon(Icons.Default.AddComment, null); Spacer(Modifier.width(8.dp)); Text("新会话") }
+                Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 18.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("项目", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { newProjectDialog = true }) { Icon(Icons.Default.Add, "新建项目") }
+                }
+                state.workspaces.forEach { workspace ->
+                    NavigationDrawerItem(
+                        label = { Text(workspace.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        selected = workspace.id == state.selectedWorkspaceId,
+                        onClick = { viewModel.selectWorkspace(workspace.id); viewModel.newCliHarnessThread(kind,); scope.launch { drawerState.close() } },
+                        icon = { Icon(Icons.Default.Folder, null) },
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                    )
+                }
+                Text("历史对话", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 6.dp))
+                LazyColumn(Modifier.weight(1f)) {
+                    items(ui.threads, key = { it.id }) { thread ->
+                        NavigationDrawerItem(
+                            label = {
+                                Column {
+                                    Text(thread.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(File(thread.workspacePath).name.ifBlank { "未绑定项目" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            },
+                            selected = thread.id == ui.activeThreadId,
+                            onClick = {
+                                state.workspaces.firstOrNull { it.localPath == thread.workspacePath }?.let { viewModel.selectWorkspace(it.id) }
+                                viewModel.selectCliHarnessThread(kind, thread.id); scope.launch { drawerState.close() }
+                            },
+                            icon = { Icon(Icons.Default.History, null) },
+                            badge = { IconButton(onClick = { viewModel.deleteCliHarnessThread(kind, thread.id) }, Modifier.size(34.dp)) { Icon(Icons.Default.DeleteOutline, "删除", Modifier.size(18.dp)) } },
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        )
+                    }
+                }
+            }
+        },
+    ) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { scope.launch { drawerState.open() } }) { Icon(Icons.Default.Menu, "项目与历史") }
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("${selectedWorkspace?.name ?: "未选择项目"} · ${ui.status}", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Box {
+                    IconButton(onClick = { projectMenu = true }) { Icon(Icons.Default.FolderOpen, "切换项目") }
+                    DropdownMenu(projectMenu, { projectMenu = false }) {
+                        state.workspaces.forEach { workspace -> DropdownMenuItem(
+                            text = { Text(workspace.name) }, leadingIcon = { Icon(Icons.Default.Folder, null) },
+                            onClick = { projectMenu = false; viewModel.selectWorkspace(workspace.id); viewModel.newCliHarnessThread(kind) },
+                        ) }
+                        HorizontalDivider()
+                        DropdownMenuItem(text = { Text("新建项目") }, leadingIcon = { Icon(Icons.Default.Add, null) }, onClick = { projectMenu = false; newProjectDialog = true })
+                        DropdownMenuItem(text = { Text("在资源管理器中打开") }, leadingIcon = { Icon(Icons.Default.FolderOpen, null) }, onClick = { projectMenu = false; viewModel.openSelectedProjectFiles() })
+                    }
+                }
+                IconButton(onClick = { viewModel.newCliHarnessThread(kind) }, enabled = !ui.running) { Icon(Icons.Default.AddComment, "新会话") }
+            }
+            HorizontalDivider()
+            if (ui.messages.isEmpty()) {
+                Column(Modifier.weight(1f).fillMaxWidth().padding(28.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(if (kind == HarnessKind.CODEX) Icons.Default.Code else Icons.Default.Psychology, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.height(14.dp))
+                    Text("开始一个 $title 任务", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                    Text("官方 CLI · 当前项目真实文件 · 历史可恢复", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else LazyColumn(
+                state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(ui.messages, key = { it.id }) { message ->
+                    val user = message.role == "user"
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (user) Arrangement.End else Arrangement.Start) {
+                        Surface(
+                            modifier = Modifier.widthIn(max = 700.dp).fillMaxWidth(if (user) .86f else 1f), shape = RoundedCornerShape(18.dp),
+                            color = when { message.error -> MaterialTheme.colorScheme.errorContainer; user -> MaterialTheme.colorScheme.primaryContainer; else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f) },
+                        ) { SelectionContainer { Text(message.text, Modifier.padding(horizontal = 14.dp, vertical = 11.dp), style = MaterialTheme.typography.bodyLarge) } }
+                    }
+                }
+                if (ui.running) item("running") { Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp); Spacer(Modifier.width(9.dp)); Text(ui.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } }
+            }
+            Surface(Modifier.fillMaxWidth().imePadding(), tonalElevation = 2.dp, shadowElevation = 8.dp) {
+                Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    OutlinedTextField(
+                        value = ui.draft, onValueChange = { viewModel.setCliHarnessDraft(kind, it) }, modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("给 $title 发送任务…", maxLines = 1, overflow = TextOverflow.Ellipsis) }, minLines = 1, maxLines = 5,
+                        shape = RoundedCornerShape(20.dp),
+                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Box {
+                            IconButton(onClick = { commandMenu = true }) { Icon(Icons.Default.Add, "附件与命令") }
+                            DropdownMenu(commandMenu, { commandMenu = false }) {
+                                DropdownMenuItem(text = { Text("添加手机文件") }, leadingIcon = { Icon(Icons.Default.AttachFile, null) }, onClick = { commandMenu = false; requestPhoneFiles() })
+                                DropdownMenuItem(text = { Text("/ 新会话") }, onClick = { commandMenu = false; viewModel.newCliHarnessThread(kind) })
+                                DropdownMenuItem(text = { Text("/ 初始化项目说明") }, onClick = { commandMenu = false; viewModel.setCliHarnessDraft(kind, "请分析当前项目并创建或更新项目说明与开发约定。") })
+                                DropdownMenuItem(text = { Text("/ 审查当前改动") }, onClick = { commandMenu = false; viewModel.setCliHarnessDraft(kind, "请审查当前 Git 改动，指出风险、回归和缺失测试。") })
+                                DropdownMenuItem(text = { Text("/ 项目状态") }, onClick = { commandMenu = false; viewModel.setCliHarnessDraft(kind, "请检查当前项目状态、未提交改动与测试结果并简要汇报。") })
+                                DropdownMenuItem(text = { Text("打开项目终端") }, leadingIcon = { Icon(Icons.Default.Terminal, null) }, onClick = { commandMenu = false; viewModel.selectSection(MainSection.TERMINAL) })
+                            }
+                        }
+                        Box {
+                            AssistChip(onClick = { permissionMenu = true }, label = { Text(when (ui.permissionMode) { CliPermissionMode.READ_ONLY -> "只读"; CliPermissionMode.WORKSPACE_WRITE -> "工作区写入"; CliPermissionMode.FULL_ACCESS -> "完全访问" }, maxLines = 1) }, leadingIcon = { Icon(Icons.Default.Security, null, Modifier.size(16.dp)) })
+                            DropdownMenu(permissionMenu, { permissionMenu = false }) {
+                                CliPermissionMode.entries.forEach { mode -> DropdownMenuItem(
+                                    text = { Text(when (mode) { CliPermissionMode.READ_ONLY -> "只读 · 每次编辑需确认"; CliPermissionMode.WORKSPACE_WRITE -> "工作区写入"; CliPermissionMode.FULL_ACCESS -> "完全访问" }) },
+                                    trailingIcon = { if (mode == ui.permissionMode) Icon(Icons.Default.Check, null) },
+                                    onClick = { permissionMenu = false; viewModel.setCliHarnessPermission(kind, mode) },
+                                ) }
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Box {
+                            TextButton(onClick = { providerMenu = true }, contentPadding = PaddingValues(horizontal = 7.dp)) { Text(state.provider.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            DropdownMenu(providerMenu, { providerMenu = false }) { state.providerProfiles.forEach { provider -> DropdownMenuItem(
+                                text = { Text(provider.displayName) }, trailingIcon = { if (provider.id == state.provider.id) Icon(Icons.Default.Check, null) },
+                                onClick = { providerMenu = false; viewModel.selectProvider(provider) },
+                            ) } }
+                        }
+                        Box {
+                            TextButton(onClick = { modelMenu = true }, contentPadding = PaddingValues(horizontal = 5.dp)) { Text(state.provider.defaultModel, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 112.dp)) }
+                            DropdownMenu(modelMenu, { modelMenu = false }) {
+                                if (discoveredModels.isEmpty()) DropdownMenuItem(text = { Text(state.provider.defaultModel) }, onClick = { modelMenu = false })
+                                else discoveredModels.forEach { model -> DropdownMenuItem(
+                                    text = { Text(model.displayName.ifBlank { model.modelId }) },
+                                    trailingIcon = { if (model.modelId == state.provider.defaultModel) Icon(Icons.Default.Check, null) },
+                                    onClick = { modelMenu = false; viewModel.updateProvider(state.provider.copy(defaultModel = model.modelId)) },
+                                ) }
+                            }
+                        }
+                        if (ui.running) FilledIconButton(onClick = { viewModel.cancelCliHarness(kind) }) { Icon(Icons.Default.Stop, "停止") }
+                        else FilledIconButton(onClick = { viewModel.sendCliHarness(kind) }, enabled = ui.draft.isNotBlank()) { Icon(Icons.Default.ArrowUpward, "发送") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OptionalHarnessLanding(
+    title: String,
+    detail: String,
+    command: String,
+    state: MainUiState,
+    viewModel: MainViewModel,
+) {
+    Column(
+        Modifier.fillMaxSize().padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("离线内置运行时", style = MaterialTheme.typography.titleMedium)
+                Text("启动接口：$command", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                Text("统一模型：${state.provider.displayName} · ${state.provider.defaultModel}")
+                Text("安装后会继承项目默认配置；已有会话不会被全局修改。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = {
+                    viewModel.openSettings("runtime/harnesses")
+                }) { Text("管理运行时") }
+            }
+        }
+        OutlinedButton(onClick = viewModel::openSelectedProjectFiles) {
+            Icon(Icons.Default.FolderOpen, null)
+            Spacer(Modifier.width(8.dp))
+            Text("打开项目文件")
+        }
+    }
+}
+
+@Composable
 @SuppressLint("SetJavaScriptEnabled")
 private fun DshAgentScreen(
     state: MainUiState,
@@ -898,6 +1057,7 @@ private fun DshAgentScreen(
     startVoiceInput: () -> Unit,
     finishVoiceInput: (Boolean) -> Unit,
     requestPhoneFiles: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val runtime = state.dshRuntime
     val context = LocalContext.current
@@ -935,7 +1095,7 @@ private fun DshAgentScreen(
         }
     }
     Box(
-        Modifier.fillMaxSize().background(
+        modifier.fillMaxSize().background(
             Brush.verticalGradient(
                 listOf(
                     MaterialTheme.colorScheme.background,
@@ -2847,67 +3007,228 @@ private fun ReasoningEffort.compactLabel(): String = when (this) {
 }
 
 @Composable
-private fun FilesScreen(state: MainUiState, viewModel: MainViewModel) {
+private fun FilesScreen(state: MainUiState, viewModel: MainViewModel, requestPhoneFiles: () -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 760.dp
         if (wide) {
             Row(Modifier.fillMaxSize()) {
-                FileList(state, viewModel, Modifier.width(300.dp).fillMaxHeight())
+                FileList(state, viewModel, Modifier.width(340.dp).fillMaxHeight(), requestPhoneFiles)
                 Box(Modifier.fillMaxHeight().width(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
                 EditorPane(state, viewModel, Modifier.weight(1f))
             }
-        } else if (state.selectedFile == null) FileList(state, viewModel, Modifier.fillMaxSize())
+        } else if (state.selectedFile == null) FileList(state, viewModel, Modifier.fillMaxSize(), requestPhoneFiles)
         else EditorPane(state, viewModel, Modifier.fillMaxSize())
     }
 }
 
 @Composable
-private fun FileList(state: MainUiState, viewModel: MainViewModel, modifier: Modifier) {
-    Column(modifier) {
-        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = viewModel::directoryUp, enabled = state.currentDirectory.isNotBlank()) {
-                Icon(Icons.Default.ArrowBack, "返回上级目录")
-            }
-            Column(Modifier.weight(1f)) {
-                Text("资源管理器", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    if (state.currentDirectory.isBlank()) "Project" else "Project/${state.currentDirectory}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            IconButton(onClick = viewModel::toggleHiddenFiles) {
-                Icon(Icons.Default.Visibility, "显示或隐藏点文件", tint = if (state.showHiddenFiles) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = viewModel::refreshFiles) { Icon(Icons.Default.Refresh, "刷新") }
-        }
-        OutlinedTextField(
-            value = state.fileSearch,
-            onValueChange = viewModel::setFileSearch,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            placeholder = { Text("在项目中搜索", maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) },
-            singleLine = true,
-        )
-        HorizontalDivider()
-        LazyColumn(Modifier.fillMaxSize()) {
-            items(state.files) { item ->
-                Row(
-                    Modifier.fillMaxWidth().clickable {
-                        if (item.directory) viewModel.openDirectory(item.path) else viewModel.openFile(item.path)
-                    }.padding(horizontal = 12.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(if (item.directory) Icons.Default.Folder else Icons.Default.Code, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(item.path.substringAfterLast('/'), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (!item.directory) Text(formatBytes(item.size), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun FileList(state: MainUiState, viewModel: MainViewModel, modifier: Modifier, requestPhoneFiles: () -> Unit) {
+    var fileMenuPath by remember { mutableStateOf<String?>(null) }
+    var renamePath by remember { mutableStateOf<String?>(null) }
+    var renameValue by remember { mutableStateOf("") }
+    var selectedPath by remember(state.fileRootId, state.currentDirectory) { mutableStateOf<String?>(null) }
+    var newMenuOpen by remember { mutableStateOf(false) }
+    var optionsOpen by remember { mutableStateOf(false) }
+    var locationMenuOpen by remember { mutableStateOf(false) }
+    var editingPath by remember { mutableStateOf(false) }
+    var pathDraft by remember(state.fileRootId, state.currentDirectory) {
+        mutableStateOf("/${state.fileRootTitle}/${state.currentDirectory}".trimEnd('/'))
+    }
+    var createKind by remember { mutableStateOf<String?>(null) }
+    var createName by remember { mutableStateOf("") }
+    val locations = viewModel.fileLocations()
+    val joinCurrent: (String) -> String = { name ->
+        listOf(state.currentDirectory.trim('/'), name.trim('/')).filter(String::isNotBlank).joinToString("/")
+    }
+    BoxWithConstraints(modifier) {
+        val compact = maxWidth < 620.dp
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+            Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box {
+                            FilledTonalIconButton(onClick = { locationMenuOpen = true }) { Icon(Icons.Default.Storage, "选择根位置") }
+                            DropdownMenu(expanded = locationMenuOpen, onDismissRequest = { locationMenuOpen = false }) {
+                                locations.forEach { location ->
+                                    DropdownMenuItem(
+                                        text = { Text(location.title) },
+                                        leadingIcon = { Icon(if (location.id == "sai") Icons.Default.Home else Icons.Default.Folder, null) },
+                                        trailingIcon = { if (state.fileRootId == location.id) Icon(Icons.Default.Check, null) },
+                                        onClick = { viewModel.selectFileRoot(location.id); locationMenuOpen = false },
+                                    )
+                                }
+                            }
+                        }
+                        Surface(Modifier.weight(.62f).clickable { editingPath = true }, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.FolderOpen, null, Modifier.padding(start = 11.dp).size(19.dp), tint = MaterialTheme.colorScheme.primary)
+                                BasicTextField(
+                                    value = if (editingPath) pathDraft else "/${state.fileRootTitle}/${state.currentDirectory}".trimEnd('/'),
+                                    onValueChange = { pathDraft = it; editingPath = true },
+                                    modifier = Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 12.dp),
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                                )
+                                if (editingPath) IconButton(onClick = { viewModel.openTypedFilePath(pathDraft); editingPath = false }, Modifier.size(38.dp)) { Icon(Icons.Default.Check, "打开路径") }
+                            }
+                        }
+                        Surface(Modifier.weight(.38f), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Search, null, Modifier.padding(start = 10.dp).size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                BasicTextField(
+                                    value = state.fileSearch,
+                                    onValueChange = viewModel::setFileSearch,
+                                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 12.dp),
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                                    decorationBox = { inner -> if (state.fileSearch.isEmpty()) Text("搜索", color = MaterialTheme.colorScheme.onSurfaceVariant); inner() },
+                                )
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = viewModel::directoryUp, enabled = state.currentDirectory.isNotBlank()) { Icon(Icons.Default.ArrowUpward, "上一级") }
+                        IconButton(onClick = viewModel::refreshFiles) { Icon(Icons.Default.Refresh, "刷新") }
+                        Box {
+                            IconButton(onClick = { newMenuOpen = true }) { Icon(Icons.Default.Add, "新建或导入") }
+                            DropdownMenu(expanded = newMenuOpen, onDismissRequest = { newMenuOpen = false }) {
+                                DropdownMenuItem(text = { Text("新建文件夹") }, leadingIcon = { Icon(Icons.Default.Folder, null) }, onClick = { newMenuOpen = false; createKind = "folder" })
+                                DropdownMenuItem(text = { Text("新建文本文件") }, leadingIcon = { Icon(Icons.Default.Code, null) }, onClick = { newMenuOpen = false; createKind = "file" })
+                                DropdownMenuItem(text = { Text("从手机导入") }, leadingIcon = { Icon(Icons.Default.CloudDownload, null) }, onClick = { newMenuOpen = false; requestPhoneFiles() })
+                            }
+                        }
+                        IconButton(onClick = { selectedPath?.let { viewModel.setFileClipboard(it, true) } }, enabled = selectedPath != null) { Icon(Icons.Default.ContentCut, "剪切") }
+                        IconButton(onClick = { selectedPath?.let { viewModel.setFileClipboard(it, false) } }, enabled = selectedPath != null) { Icon(Icons.Default.ContentCopy, "复制") }
+                        IconButton(onClick = viewModel::pasteFileClipboard, enabled = state.fileClipboardPath != null) { Icon(Icons.Default.ContentPaste, "粘贴") }
+                        IconButton(onClick = requestPhoneFiles) { Icon(Icons.Default.CloudDownload, "导入") }
+                        IconButton(onClick = { selectedPath?.let(viewModel::shareFileOrFolder) }, enabled = selectedPath != null) { Icon(Icons.Default.Share, "分享或导出") }
+                        IconButton(onClick = { selectedPath?.let(viewModel::moveToTrash); selectedPath = null }, enabled = selectedPath != null) { Icon(Icons.Default.DeleteOutline, "移到回收站") }
+                        Box {
+                            IconButton(onClick = { optionsOpen = true }) { Icon(Icons.Default.MoreVert, "更多") }
+                            DropdownMenu(expanded = optionsOpen, onDismissRequest = { optionsOpen = false }) {
+                                DropdownMenuItem(text = { Text("显示隐藏文件") }, leadingIcon = { Checkbox(state.showHiddenFiles, { viewModel.toggleHiddenFiles() }) }, onClick = { viewModel.toggleHiddenFiles(); optionsOpen = false })
+                                DropdownMenuItem(text = { Text("已用 ${formatBytes(state.storageProjectBytes)} · 可用 ${formatBytes(state.storageAvailableBytes)}") }, leadingIcon = { Icon(Icons.Default.Storage, null) }, onClick = { optionsOpen = false })
+                            }
+                        }
                     }
                 }
             }
+            Column(Modifier.weight(1f).fillMaxWidth()) {
+                    if (state.files.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.FolderOpen, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.outline)
+                                Spacer(Modifier.height(8.dp))
+                                Text("此位置为空", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    } else LazyVerticalGrid(
+                        columns = GridCells.Adaptive(if (compact) 108.dp else 124.dp),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        gridItems(state.files, key = { it.path }) { item ->
+                            val selected = selectedPath == item.path
+                            Box {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().clickable {
+                                        if (item.directory) viewModel.openDirectory(item.path) else viewModel.openFile(item.path)
+                                    },
+                                    color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                                    shape = RoundedCornerShape(16.dp),
+                                ) {
+                                    Column(Modifier.padding(horizontal = 5.dp, vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Box(Modifier.fillMaxWidth()) {
+                                            Checkbox(
+                                                checked = selected,
+                                                onCheckedChange = { checked -> selectedPath = item.path.takeIf { checked } },
+                                                modifier = Modifier.align(Alignment.TopStart).size(28.dp),
+                                            )
+                                            Icon(
+                                                imageVector = when {
+                                                    item.directory -> Icons.Default.Folder
+                                                    item.path.endsWith(".pdf", true) -> Icons.Default.PictureAsPdf
+                                                    item.path.endsWith(".md", true) || item.path.endsWith(".txt", true) -> Icons.Default.Code
+                                                    else -> Icons.Default.Code
+                                                },
+                                                contentDescription = null,
+                                                modifier = Modifier.size(if (item.directory) 48.dp else 40.dp).align(Alignment.Center),
+                                                tint = if (item.directory) Color(0xFFE5A43B) else MaterialTheme.colorScheme.primary,
+                                            )
+                                            IconButton(onClick = { fileMenuPath = item.path }, Modifier.align(Alignment.TopEnd).size(28.dp)) {
+                                                Icon(Icons.Default.MoreVert, "文件操作", Modifier.size(16.dp))
+                                            }
+                                        }
+                                        Text(item.path.substringAfterLast('/'), maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
+                                        if (!item.directory) Text(formatBytes(item.size), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                DropdownMenu(expanded = fileMenuPath == item.path, onDismissRequest = { fileMenuPath = null }) {
+                                    DropdownMenuItem(text = { Text("打开") }, leadingIcon = { Icon(Icons.Default.FolderOpen, null) }, onClick = { if (item.directory) viewModel.openDirectory(item.path) else viewModel.openFile(item.path); fileMenuPath = null })
+                                    DropdownMenuItem(text = { Text("复制") }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) }, onClick = { viewModel.setFileClipboard(item.path, false); fileMenuPath = null })
+                                    DropdownMenuItem(text = { Text("剪切") }, leadingIcon = { Icon(Icons.Default.ContentCut, null) }, onClick = { viewModel.setFileClipboard(item.path, true); fileMenuPath = null })
+                                    DropdownMenuItem(text = { Text("重命名") }, onClick = { renamePath = item.path; renameValue = item.path.substringAfterLast('/'); fileMenuPath = null })
+                                    DropdownMenuItem(text = { Text("导出 / 分享") }, leadingIcon = { Icon(Icons.Default.Share, null) }, onClick = { viewModel.shareFileOrFolder(item.path); fileMenuPath = null })
+                                    if (state.currentDirectory == ".phoneagent/trash") DropdownMenuItem(text = { Text("恢复") }, leadingIcon = { Icon(Icons.Default.RestoreFromTrash, null) }, onClick = { viewModel.restoreTrash(item.path); fileMenuPath = null })
+                                    else DropdownMenuItem(text = { Text("移到回收站", color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Default.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) }, onClick = { viewModel.moveToTrash(item.path); fileMenuPath = null })
+                                }
+                            }
+                        }
+                    }
+            }
+        }
+    }
+    renamePath?.let { path ->
+        AlertDialog(
+            onDismissRequest = { renamePath = null },
+            title = { Text("重命名") },
+            text = { OutlinedTextField(renameValue, { renameValue = it }, singleLine = true, modifier = Modifier.fillMaxWidth()) },
+            confirmButton = {
+                Button(onClick = { viewModel.renameFile(path, renameValue); renamePath = null }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { renamePath = null }) { Text("取消") } },
+        )
+    }
+    createKind?.let { kind ->
+        AlertDialog(
+            onDismissRequest = { createKind = null },
+            title = { Text(if (kind == "folder") "新建文件夹" else "新建文件") },
+            text = { OutlinedTextField(createName, { createName = it }, singleLine = true, modifier = Modifier.fillMaxWidth(), label = { Text("名称", maxLines = 1) }) },
+            confirmButton = {
+                Button(onClick = {
+                    val path = joinCurrent(createName)
+                    if (kind == "folder") viewModel.createDirectory(path) else viewModel.createFile(path)
+                    createName = ""
+                    createKind = null
+                }, enabled = createName.isNotBlank()) { Text("创建") }
+            },
+            dismissButton = { TextButton(onClick = { createKind = null }) { Text("取消") } },
+        )
+    }
+}
+
+@Composable
+private fun ExplorerPlace(
+    icon: ImageVector,
+    label: String,
+    compact: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        shape = MaterialTheme.shapes.small,
+    ) {
+        if (compact) Column(Modifier.padding(horizontal = 4.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(icon, null, Modifier.size(22.dp), tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+        } else Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, Modifier.size(21.dp), tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(10.dp))
+            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -2971,6 +3292,29 @@ private fun TerminalScreenV3(state: MainUiState, viewModel: MainViewModel) {
     val fieldValue = TextFieldValue(state.terminalCommand, TextRange(cursor))
     LaunchedEffect(state.terminalOutput.length) { outputScroll.scrollTo(outputScroll.maxValue) }
     Column(Modifier.fillMaxSize().background(Color(0xFF07111F)).imePadding()) {
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            state.terminalTabs.forEach { tab ->
+                FilterChip(
+                    selected = tab.id == state.selectedTerminalTabId,
+                    onClick = { viewModel.selectTerminalTab(tab.id) },
+                    label = { Text(tab.title, maxLines = 1) },
+                    trailingIcon = {
+                        if (state.terminalTabs.size > 1) Icon(
+                            Icons.Default.Close,
+                            contentDescription = "关闭 ${tab.title}",
+                            modifier = Modifier.size(16.dp).clickable { viewModel.removeTerminalTab(tab.id) },
+                        )
+                    },
+                )
+            }
+            IconButton(onClick = viewModel::createTerminalTab) {
+                Icon(Icons.Default.Add, contentDescription = "新建终端", tint = Color(0xFF5EEAD4))
+            }
+        }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -3262,6 +3606,8 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
     var discoveryKind by remember { mutableStateOf<ExtensionKind?>(null) }
     var discoveryCategory by remember { mutableStateOf<String?>(null) }
     var discoveryFilterOpen by remember { mutableStateOf(false) }
+    var scopeMenuOpen by remember { mutableStateOf(false) }
+    var tabMenuOpen by remember { mutableStateOf(false) }
     val discoveryCategories = remember(state.extensionResults) {
         state.extensionResults.asSequence()
             .filter { it.kind == ExtensionKind.PLUGIN }
@@ -3271,28 +3617,73 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
             .sorted()
             .toList()
     }
-    val visibleDiscoveryResults = remember(state.extensionResults, discoveryKind, discoveryCategory) {
+    val visibleDiscoveryResults = remember(state.extensionResults, discoveryKind, discoveryCategory, state.extensionHarnessScope) {
         state.extensionResults.filter { item ->
             (discoveryKind == null || item.kind == discoveryKind) &&
-                (discoveryCategory == null || item.category == discoveryCategory)
+                (discoveryCategory == null || item.category == discoveryCategory) &&
+                when (state.extensionHarnessScope) {
+                    "DSH" -> true
+                    "CODEX", "CLAUDE_CODE" -> item.kind != ExtensionKind.PLUGIN
+                    else -> item.kind in setOf(ExtensionKind.SKILL, ExtensionKind.MCP)
+                }
+        }
+    }
+    val installedForScope = remember(state.installedExtensions, state.extensionHarnessScope, state.selectedWorkspaceId) {
+        state.installedExtensions.filter { extension ->
+            (extension.scope == "GLOBAL" || extension.workspaceId == state.selectedWorkspaceId) &&
+                when (state.extensionHarnessScope) {
+                    "GENERAL" -> extension.harnessKind == null
+                    else -> extension.harnessKind == null || extension.harnessKind == state.extensionHarnessScope
+                }
         }
     }
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Text("扩展中心", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        }
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            tabs.forEach { title -> FilterChip(selected = tab == title, onClick = { tab = title }, label = { Text(title) }) }
+            Text("扩展中心", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            Box {
+                TextButton(onClick = { scopeMenuOpen = true }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text(when (state.extensionHarnessScope) {
+                        "CODEX" -> "Codex"
+                        "CLAUDE_CODE" -> "Claude Code"
+                        "GENERAL" -> "通用"
+                        else -> "DSH"
+                    }, maxLines = 1)
+                    Icon(Icons.Default.ExpandMore, null, Modifier.size(17.dp))
+                }
+                DropdownMenu(scopeMenuOpen, { scopeMenuOpen = false }) {
+                    listOf("DSH" to "DSH", "CODEX" to "Codex", "CLAUDE_CODE" to "Claude Code", "GENERAL" to "通用 Skills / MCP").forEach { (scope, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            trailingIcon = { if (state.extensionHarnessScope == scope) Icon(Icons.Default.Check, null) },
+                            onClick = { scopeMenuOpen = false; viewModel.setExtensionHarnessScope(scope) },
+                        )
+                    }
+                }
+            }
+            Box {
+                TextButton(onClick = { tabMenuOpen = true }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Text(tab, maxLines = 1)
+                    Icon(Icons.Default.ExpandMore, null, Modifier.size(17.dp))
+                }
+                DropdownMenu(tabMenuOpen, { tabMenuOpen = false }) {
+                    tabs.forEach { title -> DropdownMenuItem(
+                        text = { Text(title) },
+                        trailingIcon = { if (tab == title) Icon(Icons.Default.Check, null) },
+                        onClick = { tab = title; tabMenuOpen = false },
+                    ) }
+                }
+            }
         }
-        HorizontalDivider(Modifier.padding(top = 8.dp))
+        HorizontalDivider()
         when (tab) {
             "已安装" -> LazyColumn(
                 Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -3340,7 +3731,7 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                 ) { (id, title, summary) ->
                     ElevatedCard(Modifier.fillMaxWidth()) {
                         Row(
-                            Modifier.fillMaxWidth().padding(14.dp),
+                            Modifier.fillMaxWidth().padding(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(Icons.Default.Extension, null, tint = MaterialTheme.colorScheme.primary)
@@ -3350,7 +3741,7 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                                 Text(id, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            AssistChip(onClick = {}, label = { Text("内置 · 已启用") })
+                            Text("内置 · 已启用", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -3364,7 +3755,7 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                 }
                 items(state.bundledDshPresets, key = { "preset:${it.id}" }) { preset ->
                     ElevatedCard(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(preset.name, fontWeight = FontWeight.Bold)
@@ -3407,10 +3798,10 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                         modifier = Modifier.padding(top = 4.dp),
                     )
                 }
-                if (state.installedExtensions.isEmpty()) item { ExtensionCard("尚未安装扩展", "可在“发现”中搜索，或在 MCP/Skills 标签中添加自定义来源。") }
-                items(state.installedExtensions, key = { it.id }) { extension ->
+                if (installedForScope.isEmpty()) item { ExtensionCard("当前项目尚未安装此类扩展", "可在“发现”中搜索，或在 MCP/Skills 标签中添加自定义来源。") }
+                items(installedForScope, key = { it.id }) { extension ->
                     ElevatedCard(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text(extension.name, fontWeight = FontWeight.Bold)
@@ -3422,7 +3813,13 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                                     label = { Text(if (extension.enabled) "已启用" else "已禁用") },
                                 )
                             }
-                            Text(extension.source, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(extension.source, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                if (extension.scope == "GLOBAL") "全局 · ${extension.harnessKind ?: "通用"}"
+                                else "当前项目 · ${extension.harnessKind ?: "通用"}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
                             if (extension.installState == "UPDATE_AVAILABLE") {
                                 TextButton(onClick = { viewModel.inspectInstalledExtensionUpdate(extension) }) {
                                     Text("权限有变化 · 查看更新")
@@ -3435,7 +3832,7 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
             }
             "发现" -> Column(Modifier.fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
@@ -3445,7 +3842,7 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                             viewModel.setExtensionQuery(value)
                             if (value.isBlank()) viewModel.loadExtensionRecommendations()
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp, max = 52.dp),
                         placeholder = { Text("搜索扩展", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         singleLine = true,
                     )
@@ -3463,7 +3860,7 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                     }
                 }
                 state.extensionError?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error) }
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 1.dp)) {
                     val feedParts = state.extensionFeedTitle.split(" · ", limit = 2)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -3483,20 +3880,20 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                 }
                 LazyColumn(
                     Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     if (visibleDiscoveryResults.isEmpty() && !state.extensionSearchRunning) {
                         item { Text("当前筛选条件下没有结果", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                     items(visibleDiscoveryResults, key = { "${it.kind}:${it.id}" }) { extension ->
                         ElevatedCard(Modifier.fillMaxWidth().clickable { selectedCatalogItem = extension }) {
-                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(extension.name, Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                                    AssistChip(onClick = {}, label = { Text(extension.kind.name) })
+                                    Text(extension.kind.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 }
-                                if (extension.description.isNotBlank()) Text(extension.description, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                if (extension.description.isNotBlank()) Text(extension.description, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                                 Text(
                                     listOfNotNull(
                                         extension.source,
@@ -3643,7 +4040,30 @@ private fun ExtensionsScreen(state: MainUiState, viewModel: MainViewModel, reque
                     state.extensionAudit?.let { audit -> item { Text("审计：${audit.summary}\n${audit.details.joinToString("\n")}") } }
                     if (plan.warnings.isNotEmpty()) item { Text(plan.warnings.joinToString("\n"), color = MaterialTheme.colorScheme.error) }
                     item { Text("文件（${plan.files.size}）：\n${plan.files.take(40).joinToString("\n") { it.path }}", fontFamily = FontFamily.Monospace) }
-                    item { Text("安装完成后默认禁用。启用前仍需确认项目范围与能力。") }
+                    item {
+                        Text(
+                            "目标：${when (state.extensionHarnessScope) { "CODEX" -> "Codex"; "CLAUDE_CODE" -> "Claude Code"; "GENERAL" -> "通用 Skills / MCP"; else -> "DSH" }}",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    item {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { viewModel.setExtensionInstallGlobal(!state.extensionInstallGlobal) },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = state.extensionInstallGlobal, onCheckedChange = null)
+                            Column {
+                                Text(if (state.extensionInstallGlobal) "安装到所有项目" else "仅安装到当前项目")
+                                Text(
+                                    if (state.extensionInstallGlobal) "全局扩展需要显式选择" else "默认隔离到当前项目",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    item { Text("安装完成后默认禁用；权限扩大时需要重新审批。") }
                 }
             },
             confirmButton = { Button(onClick = viewModel::confirmExtensionInstall, enabled = plan.safeToStage) { Text("确认安装") } },
@@ -3998,7 +4418,7 @@ private fun SettingsHub(
         SettingsCategoryEntry("appearance", "外观与宠物", "软件主题颜色、界面宠物和悬浮方式", Icons.Default.SmartToy),
         SettingsCategoryEntry("voice", "语音与输入", "点击录音或按住说话、语音通话设置", Icons.Default.Mic),
         SettingsCategoryEntry("models", "模型与推理", "提供商、API Key、模型、识图和思考强度", Icons.Default.Hub),
-        SettingsCategoryEntry("runtime", "本地开发环境", "Debian、Git、Python 与可选工具链", Icons.Default.Terminal),
+        SettingsCategoryEntry("runtime", "运行环境", "Harness、Debian、Git、Python 与可选工具链", Icons.Default.Terminal),
         SettingsCategoryEntry("files", "文件与电脑连接", "外部文件授权、桌面配对和诊断", Icons.Default.Folder),
         SettingsCategoryEntry("accounts", "账户", "GitHub 登录与请求限额", Icons.Default.AccountCircle),
         SettingsCategoryEntry("about", "关于与更新", "GitHub Release 自动检查、安全下载与安装", Icons.Default.CloudDownload),
@@ -4012,6 +4432,7 @@ private fun SettingsHub(
         SettingsDetailEntry("models/providers", "models", "模型提供商", "API、密钥和模型发现", Icons.Default.Hub),
         SettingsDetailEntry("models/routing", "models", "模型与识图", "推理档位和辅助视觉", Icons.Default.Psychology),
         SettingsDetailEntry("runtime/debian", "runtime", "Debian 与 DSH", "本地运行时状态和自检", Icons.Default.Memory),
+        SettingsDetailEntry("runtime/harnesses", "runtime", "Harness 运行时", "安装或卸载 Codex 与 Claude Code", Icons.Default.Hub),
         SettingsDetailEntry("runtime/toolchains", "runtime", "开发工具链", "安装、卸载与实时进度", Icons.Default.Code),
         SettingsDetailEntry("files/access", "files", "文件访问", "外部目录权限和项目导出", Icons.Default.Folder),
         SettingsDetailEntry("files/desktop", "files", "电脑连接", "局域网扫码配对", Icons.Default.Devices),
@@ -4019,23 +4440,32 @@ private fun SettingsHub(
         SettingsDetailEntry("accounts/github", "accounts", "GitHub", "gh 登录、状态与限额", Icons.Default.AccountCircle),
         SettingsDetailEntry("about/update", "about", "应用更新", "检查、下载、校验并安装 GitHub Release", Icons.Default.CloudDownload),
     )
+    LaunchedEffect(state.settingsRoute) {
+        state.settingsRoute?.let { route ->
+            page = route.substringBefore('/')
+            detailPage = route
+            viewModel.consumeSettingsRoute()
+        }
+    }
     if (page == null && detailPage == null) {
         LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             item {
-                Text("设置", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    label = { CompactFieldLabel("搜索设置项") },
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("设置", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.widthIn(min = 54.dp))
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp, max = 52.dp),
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(19.dp)) },
+                        placeholder = { Text("搜索设置", maxLines = 1) },
+                    )
+                }
             }
             val matchingDetails = details.filter { query.isNotBlank() && (it.title.contains(query, true) || it.detail.contains(query, true)) }
             val filtered = categories.filter { category ->
@@ -4043,25 +4473,29 @@ private fun SettingsHub(
                     matchingDetails.any { it.categoryId == category.id }
             }
             items(filtered, key = { it.id }) { category ->
-                ElevatedCard(Modifier.fillMaxWidth().clickable { page = category.id }) {
-                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(Modifier.size(42.dp), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primaryContainer) {
+                Surface(
+                    Modifier.fillMaxWidth().clickable { page = category.id },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Surface(Modifier.size(34.dp), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.primaryContainer) {
                             Box(contentAlignment = Alignment.Center) { Icon(category.icon, null, tint = MaterialTheme.colorScheme.primary) }
                         }
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(9.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(category.title, style = MaterialTheme.typography.titleMedium)
-                            Text(category.detail, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(category.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                            Text(category.detail, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Icon(Icons.Default.ArrowBack, null, Modifier.graphicsLayer(rotationZ = 180f), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Default.ArrowBack, null, Modifier.size(18.dp).graphicsLayer(rotationZ = 180f), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
             if (query.isNotBlank()) items(matchingDetails, key = { "search-${it.id}" }) { detail ->
                 OutlinedCard(Modifier.fillMaxWidth().clickable { page = detail.categoryId; detailPage = detail.id }) {
-                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(detail.icon, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(12.dp))
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(detail.icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(9.dp))
                         Column(Modifier.weight(1f)) {
                             Text(detail.title)
                             Text(detail.detail, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
@@ -4075,26 +4509,26 @@ private fun SettingsHub(
     }
     if (detailPage == null) {
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { page = null }) { Icon(Icons.Default.ArrowBack, "返回设置") }
-                Text(categories.firstOrNull { it.id == page }?.title.orEmpty(), style = MaterialTheme.typography.titleLarge)
+                Text(categories.firstOrNull { it.id == page }?.title.orEmpty(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             }
             HorizontalDivider()
             LazyColumn(
                 Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(10.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 items(details.filter { it.categoryId == page }, key = { it.id }) { detail ->
-                    ElevatedCard(Modifier.fillMaxWidth().clickable { detailPage = detail.id }) {
-                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(detail.icon, null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(12.dp))
+                    Surface(Modifier.fillMaxWidth().clickable { detailPage = detail.id }, shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f)) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(detail.icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(9.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(detail.title, style = MaterialTheme.typography.titleMedium)
-                                Text(detail.detail, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                                Text(detail.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                                Text(detail.detail, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
                             }
-                            Icon(Icons.Default.ArrowBack, null, Modifier.graphicsLayer(rotationZ = 180f))
+                            Icon(Icons.Default.ArrowBack, null, Modifier.size(18.dp).graphicsLayer(rotationZ = 180f))
                         }
                     }
                 }
@@ -4103,9 +4537,9 @@ private fun SettingsHub(
         return
     }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { detailPage = null }) { Icon(Icons.Default.ArrowBack, "返回上一级") }
-            Text(details.firstOrNull { it.id == detailPage }?.title.orEmpty(), style = MaterialTheme.typography.titleLarge)
+            Text(details.firstOrNull { it.id == detailPage }?.title.orEmpty(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
         HorizontalDivider()
         when (detailPage) {
@@ -4250,6 +4684,10 @@ private fun AppearanceAndVoiceSettings(state: MainUiState, viewModel: MainViewMo
                                 }
                                 Text(if (state.voiceModelPackApkPath != null) "安装已下载的语音模型包" else "下载并安装语音模型包")
                             }
+                            if (state.voiceModelPackBusy) OutlinedButton(
+                                onClick = viewModel::pauseVoiceModelPackDownload,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("暂停下载") }
                         }
                     }
                 }
@@ -4479,6 +4917,58 @@ private fun SettingsScreen(
                     ) { Text(if (Settings.canDrawOverlays(context)) "在其他 App 上显示宠物" else "授予悬浮窗权限") }
                 }
             }
+        }
+        }
+        if (section == "runtime/harnesses") {
+        item { SettingsSectionTitle(Icons.Default.Hub, "Harness 运行时", "DSH、Codex 与 Claude Code 均随 sai 离线内置") }
+        state.harnessRuntimeOperation?.let { operation ->
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(operation, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+        item {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Hub, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("DeepSeek Harness", style = MaterialTheme.typography.titleMedium)
+                        Text(state.dshRuntime.runtimeVersion ?: "随 sai 离线提供", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text("内置", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        items(listOf(HarnessKind.CODEX to "Codex", HarnessKind.CLAUDE_CODE to "Claude Code")) { (kind, label) ->
+            val runtime = state.harnessRuntimes.firstOrNull { it.harnessKind == kind.name }
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (kind == HarnessKind.CODEX) Icons.Default.Code else Icons.Default.Psychology, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(label, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            runtime?.version?.takeIf(String::isNotBlank) ?: "随离线运行时提供",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text("内置", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        item {
+            Text(
+                "三个 Harness 共用 APK 内置 Node 24 与离线依赖，不再从手机网络临时安装。账户与模型仍由 sai 统一管理。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         }
         if (section == "runtime/debian") {

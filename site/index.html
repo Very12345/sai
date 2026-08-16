@@ -4,17 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#080b16" />
-  <meta name="description" content="sai 是以 DeepSeek Harness 为 Agent 内核、在 Android 本地运行 Debian、Git、终端、文件工具与扩展生态的移动编码工作台。" />
+  <meta name="description" content="sai 把 DeepSeek Harness、Codex 与 Claude Code 的真实客户端带到 Android，并在本地运行 Debian、Git、终端与文件工具。" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://very12345.github.io/sai/" />
-  <meta property="og:title" content="sai 1.2.0 · 随身本地编码 Agent" />
+  <meta property="og:title" content="sai 1.3.0 · 随身本地编码 Agent" />
   <meta property="og:description" content="把 DeepSeek Harness、Debian 工作区、Git、终端、Agent 浏览器与插件生态装进手机。" />
   <meta property="og:image" content="https://very12345.github.io/sai/og.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="sai 1.2.0 · 随身本地编码 Agent" />
+  <meta name="twitter:title" content="sai 1.3.0 · 随身本地编码 Agent" />
   <meta name="twitter:description" content="移动端优先、本地执行、可审核、可扩展。" />
   <meta name="twitter:image" content="https://very12345.github.io/sai/og.png" />
-  <title>sai 1.2.0 · 随身本地编码 Agent</title>
+  <title>sai 1.3.0 · 随身本地编码 Agent</title>
   <link rel="icon" href="sai.svg" />
   <link rel="stylesheet" href="styles.css?v=20260816.3" />
 </head>
@@ -22,7 +22,7 @@
   <div class="page-glow glow-one"></div><div class="page-glow glow-two"></div><div class="noise"></div>
   <header class="nav-wrap">
     <nav class="nav shell" aria-label="主导航">
-      <a class="brand" href="#top"><img src="sai.svg" alt="" /><span>sai</span><small>1.2.0</small></a>
+      <a class="brand" href="#top"><img src="sai.svg" alt="" /><span>sai</span><small>1.3.0</small></a>
       <button class="nav-toggle" type="button" aria-label="展开导航" aria-expanded="false">☰</button>
       <div class="nav-links">
         <a href="#overview">项目</a><a href="#architecture">架构</a><a href="#capabilities">能力</a><a href="#limits">边界</a><a href="#roadmap">路线图</a><a href="#download">下载</a>
@@ -34,10 +34,10 @@
   <main id="top">
     <section class="hero shell">
       <div class="hero-copy reveal">
-        <a class="release-chip" data-release-page href="#download"><i></i><span>第一个正式版</span><b>v1.2.0</b><em>查看发布说明 →</em></a>
+        <a class="release-chip" data-release-page href="#download"><i></i><span>最新正式版</span><b>v1.3.0</b><em>查看发布说明 →</em></a>
         <p class="kicker">MOBILE LOCAL CODING AGENT · POWERED BY DEEPSEEK HARNESS</p>
         <h1>让代码能力，<br /><span>从掌心扬帆。</span></h1>
-        <p class="hero-lead">sai 是为 Android 重新设计的本地编码 Agent。模型负责推理，手机本地负责项目文件、Git、终端、Debian 工具链、浏览器操作与审批；会话、工具编排和上下文由官方 DeepSeek Harness 驱动。</p>
+        <p class="hero-lead">sai 是为 Android 重新设计的本地编码工作台。模型负责推理，手机本地负责项目文件、Git、终端、Debian 工具链与审批；你可以使用 DeepSeek Harness、Codex 或 Claude Code 的真实会话与工具能力。</p>
         <div class="hero-actions">
           <a class="button button-primary" data-mobile-download href="#download">下载 Android 正式版 <span>↓</span></a>
           <a class="button button-secondary" href="#overview">先了解它能做什么</a>
@@ -92,13 +92,13 @@
     <section id="architecture" class="section architecture-section">
       <div class="shell">
         <div class="section-heading reveal">
-          <div><span>02 · ARCHITECTURE</span><h2>原生 Android 外壳，<br />DeepSeek Harness 内核。</h2></div>
-          <p>sai 1.2.0 以官方 DeepSeek Harness 作为唯一活动 Agent 引擎。Compose 管设备能力与安全边界，DSH 管会话、模型流、工具编排、Steer、上下文压缩和追加式事件。</p>
+          <div><span>02 · ARCHITECTURE</span><h2>原生 Android 外壳，<br />三种真实 Harness 客户端。</h2></div>
+          <p>Compose 管设备能力与安全边界；DSH、Codex app-server 与 Claude Code Agent SDK 分别管理各自的会话、历史、命令、工具和审批。sai 不再用简化聊天页模拟它们。</p>
         </div>
         <div class="architecture-board reveal">
           <div class="arch-column native"><span>ANDROID NATIVE</span><h3>sai Compose Shell</h3><ul><li>项目、文件与多标签终端</li><li>Keystore、Room 与系统权限</li><li>前台任务、通知与语音服务</li><li>浏览器、分享与设备能力</li></ul></div>
           <div class="arch-link"><b>受限桥</b><i>↔</i><small>Loopback + 临时凭据</small></div>
-          <div class="arch-column harness"><span>AGENT ENGINE</span><h3>DeepSeek Harness</h3><ul><li>会话与追加事件</li><li>模型与工具调用</li><li>Steer、审批与恢复</li><li>上下文压缩和插件槽位</li></ul></div>
+          <div class="arch-column harness"><span>HARNESS CLIENTS</span><h3>DSH · Codex · Claude Code</h3><ul><li>原生项目与历史会话</li><li>模型、命令与工具调用</li><li>审批、中断与恢复</li><li>面向手机的响应式 GUI</li></ul></div>
           <div class="arch-link"><b>本地执行</b><i>↔</i><small>项目级工作目录</small></div>
           <div class="arch-column runtime"><span>LOCAL RUNTIME</span><h3>Debian + PRoot</h3><ul><li>Git、Bash、Python</li><li>Node、Rust、Go、Java</li><li>C/C++ 与 LaTeX 工具链</li><li>PTY 与后台任务</li></ul></div>
         </div>
@@ -171,7 +171,7 @@
       <div class="download-panel reveal">
         <figure class="release-art">
           <img src="og.png" alt="sai 1.2.0 彩色帆船正式版发布主视觉" />
-          <figcaption><div><span>FIRST STABLE RELEASE</span><b>sai 1.2.0 · 第一个正式版</b></div><a data-release-page href="#">查看完整发布说明 →</a></figcaption>
+          <figcaption><div><span>FIRST STABLE MILESTONE</span><b>sai 1.2.0 · 首个正式版主视觉</b></div><a data-release-page href="#">查看最新发布说明 →</a></figcaption>
         </figure>
         <div class="download-intro"><span>07 · DOWNLOAD</span><h2>从第一个正式版，开始航行。</h2><p>所有产物由 GitHub Actions 构建并附带 SHA-256、SBOM 与许可证。手机端可自行检查、下载、校验并升级，后续无需反复连接 USB。</p><div class="requirements"><b>Android 10+</b><b>ARM64 推荐</b><b>约 1 GB 基础空间</b><b>模型 API Key</b></div></div>
         <div class="download-list">
@@ -198,7 +198,7 @@
       <div><a class="brand" href="#top"><img src="sai.svg" alt="" /><span>sai</span></a><p>Built for work that moves.</p></div>
       <div><b>项目</b><a data-repo href="#">GitHub</a><a data-release-page href="#">Releases</a><a data-security href="#">安全说明</a></div>
       <div><b>许可</b><span>sai · GPLv3</span><span>DeepSeek Harness · MIT</span><span>第三方声明随 Release 发布</span></div>
-      <div><b>状态</b><span>第一个正式版 · v1.2.0</span><span>Android 10+ · 侧载发布</span><span id="year"></span></div>
+      <div><b>状态</b><span>最新正式版 · v1.3.0</span><span>Android 10+ · 侧载发布</span><span id="year"></span></div>
     </div>
   </footer>
   <script src="app.js?v=20260816.3"></script>

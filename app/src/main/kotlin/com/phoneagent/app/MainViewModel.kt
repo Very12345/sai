@@ -5,9 +5,15 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.os.Build
+import android.os.StatFs
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.phoneagent.agent.AgentEvent
 import com.phoneagent.agent.ConversationProjection
 import com.phoneagent.agent.AgentMode
@@ -18,6 +24,8 @@ import com.phoneagent.agent.ApprovalRequest
 import com.phoneagent.app.service.AgentForegroundService
 import com.phoneagent.app.service.ScreenCaptureService
 import com.phoneagent.app.service.PetOverlayService
+import com.phoneagent.app.service.VoicePackDownloadWorker
+import com.phoneagent.app.service.VoiceConversationService
 import com.phoneagent.data.WorkspaceEntity
 import com.phoneagent.data.SessionEntity
 import com.phoneagent.data.ExtensionEntity
@@ -25,6 +33,9 @@ import com.phoneagent.data.ProviderModelEntity
 import com.phoneagent.data.McpServerEntity
 import com.phoneagent.data.HookConfigEntity
 import com.phoneagent.data.DesktopPairingEntity
+import com.phoneagent.data.TrashEntryEntity
+import com.phoneagent.data.TerminalTabEntity
+import com.phoneagent.data.HarnessRuntimeEntity
 import com.phoneagent.extensions.CatalogExtension
 import com.phoneagent.extensions.ExtensionCatalogClient
 import com.phoneagent.extensions.ExtensionInstallPlan
@@ -59,6 +70,7 @@ import com.phoneagent.runtime.TerminalEvent
 import com.phoneagent.dsh.DshRuntimeState
 import com.phoneagent.dsh.DshRuntimePhase
 import com.phoneagent.dsh.BundledDshPresetState
+import com.phoneagent.harness.HarnessKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +83,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.serialization.json.Json
@@ -92,15 +106,23 @@ enum class SessionPermissionMode { ASK, AUTO, YOLO }
 
 data class FileItem(val path: String, val directory: Boolean, val size: Long)
 
+data class FileLocation(
+    val id: String,
+    val title: String,
+)
+
 data class RuntimePackageRequest(val group: RuntimePackageGroup, val action: RuntimePackageAction)
 
 data class MainUiState(
     val section: MainSection = MainSection.AGENT,
+    val activeHarnessKind: HarnessKind = HarnessKind.DSH,
     val events: List<AgentEvent> = emptyList(),
     val workspaces: List<WorkspaceEntity> = emptyList(),
     val sessions: List<SessionEntity> = emptyList(),
     val taskHandles: Map<String, TaskHandle> = emptyMap(),
     val dshTasks: Map<String, SaiDshTaskStatus> = emptyMap(),
+    val cliHarnesses: Map<HarnessKind, CliHarnessUiState> = emptyMap(),
+    val harnessWebRuntimes: Map<HarnessKind, HarnessWebRuntimeState> = emptyMap(),
     val selectedWorkspaceId: String = DEFAULT_WORKSPACE_ID,
     val selectedSessionId: String? = null,
     val runState: AgentRunState = AgentRunState.IDLE,
@@ -119,9 +141,16 @@ data class MainUiState(
     val voiceModelPackProgress: String? = null,
     val voiceModelPackApkPath: String? = null,
     val files: List<FileItem> = emptyList(),
+    val fileRootId: String = "sai",
+    val fileRootTitle: String = "sai 根目录",
     val currentDirectory: String = "",
     val fileSearch: String = "",
     val showHiddenFiles: Boolean = false,
+    val settingsRoute: String? = null,
+    val fileClipboardPath: String? = null,
+    val fileClipboardCut: Boolean = false,
+    val storageProjectBytes: Long = 0,
+    val storageAvailableBytes: Long = 0,
     val selectedFile: String? = null,
     val editorText: String = "",
     val editorDirty: Boolean = false,
@@ -131,9 +160,13 @@ data class MainUiState(
     val terminalCursor: Int = 0,
     val terminalOutput: String = "",
     val terminalConnected: Boolean = false,
+    val terminalTabs: List<TerminalTabEntity> = emptyList(),
+    val selectedTerminalTabId: String? = null,
     val runtimeCapability: RuntimeCapability? = null,
     val dshRuntime: DshRuntimeState = DshRuntimeState(),
     val dshRollbackAvailable: Boolean = false,
+    val harnessRuntimes: List<HarnessRuntimeEntity> = emptyList(),
+    val harnessRuntimeOperation: String? = null,
     val bundledDshPresets: List<BundledDshPresetState> = emptyList(),
     val rootfsInstallState: RootfsInstallState = RootfsInstallState.NotInstalled,
     val runtimeSelfTestOutput: String = "",
@@ -159,6 +192,8 @@ data class MainUiState(
     val externalTreeUri: String? = null,
     val allFilesAccess: Boolean = hasAllFilesAccess(),
     val installedExtensions: List<ExtensionEntity> = emptyList(),
+    val extensionHarnessScope: String = "DSH",
+    val extensionInstallGlobal: Boolean = false,
     val extensionQuery: String = "",
     val extensionResults: List<CatalogExtension> = emptyList(),
     val extensionSearchRunning: Boolean = false,
@@ -198,6 +233,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val container = (application as PhoneAgentApplication).container
     private val uiPreferences = application.getSharedPreferences("sai-ui", 0)
     private val _ui = MutableStateFlow(MainUiState(
+        activeHarnessKind = runCatching {
+            HarnessKind.valueOf(uiPreferences.getString("active_harness_kind", HarnessKind.DSH.name).orEmpty())
+        }.getOrDefault(HarnessKind.DSH),
         provider = ModelReasoningPolicy.normalize(container.providerSettings.profile.value),
         providerProfiles = container.providerSettings.profiles.value,
         rootfsInstallState = initialRootfsState(),
@@ -221,6 +259,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var runtimePackageJob: kotlinx.coroutines.Job? = null
     private var selectedSessionEventsJob: Job? = null
     private var githubLoginJob: Job? = null
+    private var bundledHarnessRecordsSynced = false
+    private val observedVoicePackWorks = mutableSetOf<UUID>()
     private val githubAuthNotifier = GitHubDeviceAuthNotifier(application)
     private val eventJson = Json { ignoreUnknownKeys = true; classDiscriminator = "eventType" }
     private val extensionCatalog = ExtensionCatalogClient(
@@ -243,6 +283,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         probeRuntime()
         refreshGitHubCli()
         checkForAppUpdate(automatic = true)
+        restoreVoicePackDownloadObservation()
         if (_ui.value.rootfsInstallState is RootfsInstallState.NotInstalled) installRootfs()
         if (container.providerSettings.hasCredential()) refreshModels()
         loadExtensionRecommendations()
@@ -253,6 +294,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     dshRollbackAvailable = container.dshProvisioner.canRollback(),
                     bundledDshPresets = container.dshProvisioner.bundledPresetStates(),
                 ) }
+                if (dsh.ready && !bundledHarnessRecordsSynced) {
+                    bundledHarnessRecordsSynced = true
+                    syncBundledHarnessRecords()
+                }
             }
         }
         viewModelScope.launch {
@@ -261,12 +306,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
+            container.bundledCliHarnesses.states.collectLatest { cli ->
+                _ui.update { it.copy(cliHarnesses = cli) }
+            }
+        }
+        viewModelScope.launch {
+            container.harnessWebRuntime.states.collectLatest { runtimes ->
+                _ui.update { it.copy(harnessWebRuntimes = runtimes) }
+            }
+        }
+        _ui.value.activeHarnessKind.takeIf { it in setOf(HarnessKind.CODEX, HarnessKind.CLAUDE_CODE) }
+            ?.let(container.harnessWebRuntime::ensureStarted)
+        viewModelScope.launch {
             container.database.dao().observeWorkspaces().collectLatest { workspaces ->
+                val previousWorkspaceId = _ui.value.selectedWorkspaceId
                 _ui.update { state ->
                     val selected = state.selectedWorkspaceId.takeIf { id -> workspaces.any { it.id == id } }
                         ?: workspaces.firstOrNull()?.id
                         ?: DEFAULT_WORKSPACE_ID
                     state.copy(workspaces = workspaces, selectedWorkspaceId = selected)
+                }
+                val selectedWorkspaceId = _ui.value.selectedWorkspaceId
+                if (selectedWorkspaceId != null && (selectedWorkspaceId != previousWorkspaceId || _ui.value.terminalTabs.isEmpty())) {
+                    loadTerminalTabs(selectedWorkspaceId)
                 }
             }
         }
@@ -276,6 +338,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val selected = state.selectedSessionId?.takeIf { id -> sessions.any { it.id == id } }
                     state.copy(sessions = sessions, selectedSessionId = selected)
                 }
+            }
+        }
+        viewModelScope.launch {
+            container.database.dao().observeHarnessRuntimes().collectLatest { runtimes ->
+                _ui.update { it.copy(harnessRuntimes = runtimes) }
             }
         }
         viewModelScope.launch {
@@ -404,11 +471,158 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectSection(section: MainSection) {
         _ui.update { it.copy(section = section) }
+        if (section == MainSection.FILES) refreshFiles()
         if (section == MainSection.TERMINAL && _ui.value.runtimeCapability?.available == true) openTerminal()
     }
 
+    fun openSettings(route: String) {
+        _ui.update { it.copy(section = MainSection.SETTINGS, settingsRoute = route) }
+    }
+
+    fun consumeSettingsRoute() = _ui.update { it.copy(settingsRoute = null) }
+
+    fun selectHarness(kind: HarnessKind) {
+        uiPreferences.edit().putString("active_harness_kind", kind.name).apply()
+        _ui.update { it.copy(activeHarnessKind = kind) }
+        if (kind in setOf(HarnessKind.CODEX, HarnessKind.CLAUDE_CODE)) {
+            container.harnessWebRuntime.ensureStarted(kind)
+        }
+    }
+
+    fun restartHarnessWebRuntime(kind: HarnessKind) {
+        if (kind !in setOf(HarnessKind.CODEX, HarnessKind.CLAUDE_CODE)) return
+        viewModelScope.launch { container.harnessWebRuntime.restart(kind) }
+    }
+
+    fun setCliHarnessDraft(kind: HarnessKind, value: String) =
+        container.bundledCliHarnesses.setDraft(kind, value)
+
+    fun sendCliHarness(kind: HarnessKind) {
+        val state = _ui.value
+        val workspace = state.workspaces.firstOrNull { it.id == state.selectedWorkspaceId }
+            ?.localPath?.let(::File) ?: container.workspace
+        container.bundledCliHarnesses.send(kind, workspace, state.provider)
+    }
+
+    fun cancelCliHarness(kind: HarnessKind) = container.bundledCliHarnesses.cancel(kind)
+
+    fun clearCliHarness(kind: HarnessKind) = container.bundledCliHarnesses.clear(kind)
+
+    fun newCliHarnessThread(kind: HarnessKind) {
+        val workspace = _ui.value.workspaces.firstOrNull { it.id == _ui.value.selectedWorkspaceId }
+            ?.localPath?.let(::File)
+        container.bundledCliHarnesses.newThread(kind, workspace)
+    }
+
+    fun selectCliHarnessThread(kind: HarnessKind, threadId: String) =
+        container.bundledCliHarnesses.selectThread(kind, threadId)
+
+    fun deleteCliHarnessThread(kind: HarnessKind, threadId: String) =
+        container.bundledCliHarnesses.deleteThread(kind, threadId)
+
+    fun setCliHarnessPermission(kind: HarnessKind, mode: CliPermissionMode) =
+        container.bundledCliHarnesses.setPermissionMode(kind, mode)
+
+    fun installOptionalHarness(kind: HarnessKind) {
+        if (kind !in setOf(HarnessKind.CODEX, HarnessKind.CLAUDE_CODE) || _ui.value.harnessRuntimeOperation != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val dao = container.database.dao()
+            val label = if (kind == HarnessKind.CODEX) "Codex" else "Claude Code"
+            _ui.update { it.copy(harnessRuntimeOperation = "正在安装 $label…") }
+            dao.upsertHarnessRuntime(HarnessRuntimeEntity(kind.name, installState = "INSTALLING"))
+            runCatching {
+                container.dshProvisioner.install()
+                val componentRoot = File(getApplication<Application>().filesDir, "harness-runtimes/${kind.name.lowercase()}").apply { mkdirs() }
+                val packageName = if (kind == HarnessKind.CODEX) "@openai/codex@latest" else "@anthropic-ai/claude-code@latest"
+                val binary = if (kind == HarnessKind.CODEX) "codex" else "claude"
+                val command = """
+                    set -eu
+                    NODE=/opt/sai-dsh/node/bin/node
+                    NPM=/opt/sai-dsh/node/lib/node_modules/npm/bin/npm-cli.js
+                    test -x "${'$'}NODE"
+                    test -f "${'$'}NPM"
+                    "${'$'}NODE" "${'$'}NPM" install --prefix /opt/sai-harness --ignore-scripts --no-audit --no-fund $packageName
+                    /opt/sai-harness/node_modules/.bin/$binary --version
+                """.trimIndent()
+                val result = container.runtime.runStreaming(
+                    RunRequest(
+                        command = command,
+                        workingDirectory = "/home/phoneagent",
+                        timeoutMillis = 15 * 60_000L,
+                        outputLimitBytes = 512_000,
+                        trustedBinds = mapOf(
+                            container.dshProvisioner.current.absolutePath to "/opt/sai-dsh",
+                            componentRoot.absolutePath to "/opt/sai-harness",
+                        ),
+                    ),
+                ) { output ->
+                    val tail = output.text.trim().takeLast(120)
+                    if (tail.isNotBlank()) _ui.update { it.copy(harnessRuntimeOperation = "$label · $tail") }
+                }
+                check(result.exitCode == 0) { result.stderr.ifBlank { result.stdout }.takeLast(2_000).ifBlank { "$label 安装失败" } }
+                val version = (result.stdout.lineSequence() + result.stderr.lineSequence()).lastOrNull { it.isNotBlank() }.orEmpty().take(120)
+                dao.upsertHarnessRuntime(HarnessRuntimeEntity(
+                    harnessKind = kind.name,
+                    version = version,
+                    installState = "INSTALLED",
+                    binaryPath = File(componentRoot, "node_modules/.bin/$binary").absolutePath,
+                ))
+            }.onSuccess {
+                _ui.update { it.copy(harnessRuntimeOperation = null, message = "$label 运行时安装完成") }
+            }.onFailure { error ->
+                dao.upsertHarnessRuntime(HarnessRuntimeEntity(kind.name, installState = "FAILED", capabilitiesJson = "{\"error\":${JsonPrimitive(error.message ?: "安装失败")}}"))
+                _ui.update { it.copy(harnessRuntimeOperation = null, message = error.message ?: "$label 安装失败") }
+            }
+        }
+    }
+
+    private fun syncBundledHarnessRecords() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val appRoot = File(container.dshProvisioner.current, "app")
+            listOf(
+                Triple(HarnessKind.CODEX, "0.147.0 · 内置", "codex"),
+                Triple(HarnessKind.CLAUDE_CODE, "2.1.233 · 内置", "claude"),
+            ).forEach { (kind, version, binary) ->
+                val executable = File(appRoot, "node_modules/.bin/$binary")
+                container.database.dao().upsertHarnessRuntime(
+                    HarnessRuntimeEntity(
+                        harnessKind = kind.name,
+                        version = version,
+                        installState = if (executable.exists()) "INSTALLED" else "BUNDLED_PENDING",
+                        binaryPath = executable.absolutePath,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun removeOptionalHarness(kind: HarnessKind) {
+        if (kind !in setOf(HarnessKind.CODEX, HarnessKind.CLAUDE_CODE) || _ui.value.harnessRuntimeOperation != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val label = if (kind == HarnessKind.CODEX) "Codex" else "Claude Code"
+            _ui.update { it.copy(harnessRuntimeOperation = "正在卸载 $label…") }
+            val componentRoot = File(getApplication<Application>().filesDir, "harness-runtimes/${kind.name.lowercase()}")
+            runCatching {
+                check(componentRoot.canonicalPath.startsWith(File(getApplication<Application>().filesDir, "harness-runtimes").canonicalPath + File.separator))
+                if (componentRoot.exists()) check(componentRoot.deleteRecursively()) { "无法删除 $label 运行时目录" }
+                container.database.dao().upsertHarnessRuntime(HarnessRuntimeEntity(kind.name))
+            }.onSuccess { _ui.update { it.copy(harnessRuntimeOperation = null, message = "$label 已卸载") } }
+                .onFailure { error -> _ui.update { it.copy(harnessRuntimeOperation = null, message = error.message ?: "$label 卸载失败") } }
+        }
+    }
+
     fun openSelectedProjectFiles() {
-        _ui.update { it.copy(section = MainSection.FILES, selectedFile = null, editorDirty = false) }
+        val workspace = selectedWorkspace()
+        _ui.update {
+            it.copy(
+                section = MainSection.FILES,
+                fileRootId = "workspace:${workspace?.id ?: DEFAULT_WORKSPACE_ID}",
+                fileRootTitle = workspace?.name ?: "默认项目",
+                currentDirectory = "",
+                selectedFile = null,
+                editorDirty = false,
+            )
+        }
         refreshFiles()
     }
     fun setPrompt(prompt: String) = _ui.update { it.copy(prompt = prompt) }
@@ -646,6 +860,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { container.dshApi.cancel(sessionId) } }
     }
 
+    fun stopEverythingAndExit(onReady: () -> Unit) {
+        viewModelScope.launch {
+            _ui.update { it.copy(message = "正在写入检查点并停止任务…") }
+            withContext(Dispatchers.IO) {
+                container.database.dao().pauseTriggersForExit()
+                container.dshBridge.taskStatuses.value.keys.forEach { sessionId ->
+                    runCatching { container.dshApi.cancel(sessionId) }
+                }
+                runCatching { container.desktopConnection.disconnect() }
+                runCatching { container.dshRuntime.stop() }
+                val app = getApplication<Application>()
+                app.stopService(Intent(app, VoiceConversationService::class.java))
+                app.stopService(Intent(app, PetOverlayService::class.java))
+                app.stopService(Intent(app, AgentForegroundService::class.java))
+            }
+            onReady()
+        }
+    }
+
     fun undoFromTurn(turnIndex: Int, restoreProjectState: Boolean) {
         _ui.update { it.copy(message = "请使用 sai 对话消息旁的撤回操作；DSH 会同步处理会话与 Git 检查点") }
     }
@@ -664,14 +897,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 selectedFile = null,
                 editorText = "",
                 editorDirty = false,
-                terminalConnected = terminalSessions.containsKey(workspace.id),
-                terminalOutput = terminalOutputs[workspace.id].orEmpty(),
+                terminalConnected = false,
+                terminalOutput = "",
+                terminalTabs = emptyList(),
+                selectedTerminalTabId = null,
                 terminalCommand = "",
                 terminalCursor = 0,
             )
         }
         uiPreferences.edit().putString("active_workspace_id", workspace.id).remove("active_session_id").apply()
-        viewModelScope.launch { container.database.dao().touchWorkspace(workspaceId) }
+        viewModelScope.launch {
+            container.database.dao().touchWorkspace(workspaceId)
+            loadTerminalTabs(workspaceId)
+        }
         refreshFiles()
     }
 
@@ -884,6 +1122,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun newSession() {
+        selectedSessionEventsJob?.cancel()
+        uiPreferences.edit().remove("active_session_id").apply()
+        _ui.update { it.copy(selectedSessionId = null, events = emptyList(), runState = AgentRunState.IDLE, prompt = "") }
+    }
+
     fun renameSession(sessionId: String, title: String) {
         val normalized = title.trim().take(100)
         if (normalized.isEmpty()) return
@@ -919,7 +1163,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshFiles() {
         viewModelScope.launch(Dispatchers.IO) {
-            val root = selectedWorkspaceDirectory()
+            val root = activeFileRoot()
             val state = _ui.value
             val directory = if (state.currentDirectory.isBlank()) root else safeFile(state.currentDirectory)
             val search = state.fileSearch.trim()
@@ -930,8 +1174,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 .take(2_000).map {
                 FileItem(it.relativeTo(root).invariantSeparatorsPath, it.isDirectory, it.length())
             }.sortedWith(compareByDescending<FileItem> { it.directory }.thenBy { it.path.lowercase() }).toList()
-            _ui.update { it.copy(files = items) }
+            val projectBytes = root.walkTopDown().filter(File::isFile).sumOf(File::length)
+            val available = runCatching { StatFs(root.absolutePath).availableBytes }.getOrDefault(0)
+            _ui.update { it.copy(files = items, storageProjectBytes = projectBytes, storageAvailableBytes = available) }
         }
+    }
+
+    fun fileLocations(): List<FileLocation> = buildList {
+        add(FileLocation("sai", "sai 根目录"))
+        add(FileLocation("dsh", "DeepSeek Harness"))
+        add(FileLocation("debian", "Debian 主目录"))
+        _ui.value.workspaces.forEach { add(FileLocation("workspace:${it.id}", it.name)) }
+    }
+
+    fun selectFileRoot(id: String) {
+        val location = fileLocations().firstOrNull { it.id == id } ?: return
+        _ui.update {
+            it.copy(
+                fileRootId = id,
+                fileRootTitle = location.title,
+                currentDirectory = "",
+                fileSearch = "",
+                selectedFile = null,
+                editorText = "",
+                editorDirty = false,
+            )
+        }
+        refreshFiles()
     }
 
     fun openDirectory(path: String) {
@@ -945,6 +1214,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val current = _ui.value.currentDirectory
         val parent = current.substringBeforeLast('/', "")
         openDirectory(parent)
+    }
+
+    fun openTypedFilePath(value: String) {
+        val raw = value.trim().replace('\\', '/').trim('/')
+        val rootPrefix = _ui.value.fileRootTitle.trim('/').replace('\\', '/')
+        val relative = raw.removePrefix(rootPrefix).trim('/')
+        val directory = runCatching { safeFile(relative) }.getOrNull()
+        if (directory?.isDirectory != true) {
+            showMessage("目录不存在或超出当前位置")
+            return
+        }
+        openDirectory(relative)
     }
 
     fun setFileSearch(value: String) {
@@ -976,6 +1257,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openArtifact(target: String) {
+        val workspaceEntity = selectedWorkspace()
         val workspace = selectedWorkspaceDirectory().canonicalFile
         val cleaned = target.trim().removePrefix("file://").removeSurrounding("`")
         val candidate = runCatching {
@@ -986,6 +1268,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return showMessage("文件不在当前项目中")
         }
         if (!candidate.isFile) return showMessage("文件不存在：${candidate.name}")
+        _ui.update {
+            it.copy(
+                fileRootId = "workspace:${workspaceEntity?.id ?: DEFAULT_WORKSPACE_ID}",
+                fileRootTitle = workspaceEntity?.name ?: "默认项目",
+                currentDirectory = "",
+            )
+        }
         openFile(candidate.relativeTo(workspace).invariantSeparatorsPath)
     }
 
@@ -1052,10 +1341,149 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val source = safeFile(path)
             val trashRoot = safeFile(".phoneagent/trash").apply { mkdirs() }
-            val target = File(trashRoot, "${System.currentTimeMillis()}-${source.name}")
+            val id = UUID.randomUUID().toString()
+            val target = File(trashRoot, "$id-${source.name}")
+            val size = if (source.isDirectory) source.walkTopDown().filter(File::isFile).sumOf(File::length) else source.length()
             check(source.renameTo(target)) { "无法移动到项目回收站" }
+            container.database.dao().upsertTrashEntry(TrashEntryEntity(
+                id = id,
+                workspaceId = _ui.value.selectedWorkspaceId,
+                originalPath = path,
+                trashPath = target.relativeTo(activeFileRoot()).invariantSeparatorsPath,
+                displayName = source.name,
+                directory = target.isDirectory,
+                sizeBytes = size,
+            ))
             if (_ui.value.selectedFile == path) closeEditorDiscarding()
             refreshFiles()
+        }
+    }
+
+    fun setFileClipboard(path: String, cut: Boolean) {
+        runCatching { safeFile(path) }.getOrNull() ?: return
+        _ui.update { it.copy(fileClipboardPath = path, fileClipboardCut = cut, message = if (cut) "已剪切，选择目录后粘贴" else "已复制，选择目录后粘贴") }
+    }
+
+    fun renameFile(path: String, newName: String) {
+        val normalized = newName.trim()
+        if (normalized.isBlank() || normalized in setOf(".", "..") || normalized.any { it in "\\/:*?\"<>|" }) {
+            return _ui.update { it.copy(message = "文件名无效") }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val source = safeFile(path)
+                val target = File(source.parentFile, normalized).canonicalFile
+                val root = activeFileRoot().canonicalFile
+                require(target.path.startsWith(root.path + File.separator)) { "重命名路径越界" }
+                require(!target.exists()) { "同目录已有同名项目" }
+                check(source.renameTo(target)) { "重命名失败" }
+            }.onSuccess {
+                refreshFiles()
+                _ui.update { it.copy(message = "重命名完成") }
+            }.onFailure { error -> _ui.update { it.copy(message = error.message ?: "重命名失败") } }
+        }
+    }
+
+    fun pasteFileClipboard() {
+        val state = _ui.value
+        val sourcePath = state.fileClipboardPath ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val source = safeFile(sourcePath)
+                val directory = if (state.currentDirectory.isBlank()) activeFileRoot() else safeFile(state.currentDirectory)
+                require(directory.isDirectory) { "当前不是目录" }
+                var target = File(directory, source.name)
+                if (target.exists()) {
+                    val base = source.nameWithoutExtension
+                    val suffix = source.extension.takeIf(String::isNotBlank)?.let { ".$it" }.orEmpty()
+                    var index = 2
+                    while (target.exists()) target = File(directory, "$base ($index)$suffix").also { index++ }
+                }
+                if (state.fileClipboardCut) {
+                    check(source.renameTo(target)) { "无法移动文件" }
+                } else if (source.isDirectory) {
+                    source.copyRecursively(target, overwrite = false)
+                } else source.copyTo(target, overwrite = false)
+            }.onSuccess {
+                _ui.update { it.copy(fileClipboardPath = null, fileClipboardCut = false, message = "粘贴完成") }
+                refreshFiles()
+            }.onFailure { error -> _ui.update { it.copy(message = error.message ?: "粘贴失败") } }
+        }
+    }
+
+    fun restoreTrash(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val root = activeFileRoot()
+            val workspaceId = _ui.value.selectedWorkspaceId ?: return@launch
+            val normalizedPath = path.replace('\\', '/')
+            val entry = container.database.dao().trashEntryByPath(workspaceId, normalizedPath)
+            if (entry == null) return@launch _ui.update { it.copy(message = "缺少回收站元数据") }
+            runCatching {
+                val source = File(root, entry.trashPath).canonicalFile
+                val target = File(root, entry.originalPath).canonicalFile
+                require(target.path.startsWith(root.canonicalPath + File.separator)) { "恢复路径越界" }
+                require(!target.exists()) { "原位置已有同名文件" }
+                target.parentFile?.mkdirs()
+                check(source.renameTo(target)) { "恢复失败" }
+                container.database.dao().deleteTrashEntry(entry.id)
+            }.onSuccess { refreshFiles(); _ui.update { it.copy(message = "已恢复 ${entry.displayName}") } }
+                .onFailure { error -> _ui.update { it.copy(message = error.message ?: "恢复失败") } }
+        }
+    }
+
+    fun shareFileOrFolder(path: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val source = safeFile(path)
+                val shared = if (source.isDirectory) {
+                    val target = File(getApplication<Application>().cacheDir, "shares/${source.name}-${System.currentTimeMillis()}.zip")
+                    target.parentFile?.mkdirs()
+                    ZipOutputStream(target.outputStream().buffered()).use { zip ->
+                        source.walkTopDown().filter(File::isFile).forEach { file ->
+                            zip.putNextEntry(ZipEntry(file.relativeTo(source).invariantSeparatorsPath))
+                            file.inputStream().buffered().use { it.copyTo(zip, 128 * 1024) }
+                            zip.closeEntry()
+                        }
+                    }
+                    target
+                } else source
+                val app = getApplication<Application>()
+                val uri = FileProvider.getUriForFile(app, "${app.packageName}.files", shared)
+                app.startActivity(Intent(Intent.ACTION_SEND).apply {
+                    type = if (shared.extension.equals("zip", true)) "application/zip" else "*/*"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                })
+            }.onFailure { error -> _ui.update { it.copy(message = error.message ?: "分享失败") } }
+        }
+    }
+
+    fun importExternalFiles(paths: List<String>) {
+        if (paths.isEmpty()) return
+        val state = _ui.value
+        viewModelScope.launch(Dispatchers.IO) {
+            val directory = runCatching {
+                if (state.currentDirectory.isBlank()) activeFileRoot() else safeFile(state.currentDirectory)
+            }.getOrElse { return@launch }
+            var copied = 0
+            paths.forEach { raw ->
+                runCatching {
+                    val source = File(raw).canonicalFile
+                    require(source.isFile) { "导入来源无效" }
+                    val importedName = source.name.replace(Regex("^[0-9a-fA-F-]{36}-"), "")
+                    var target = File(directory, importedName)
+                    var index = 2
+                    while (target.exists()) {
+                        target = File(directory, "${target.nameWithoutExtension} ($index)${target.extension.takeIf(String::isNotBlank)?.let { ".$it" }.orEmpty()}")
+                        index++
+                    }
+                    source.copyTo(target)
+                    source.delete()
+                    copied++
+                }
+            }
+            refreshFiles()
+            _ui.update { it.copy(message = "已导入 $copied 个文件") }
         }
     }
 
@@ -1077,7 +1505,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val nextCursor = cursor.coerceIn(0, command.length)
         if (command == previous && nextCursor == previousCursor) return
         _ui.update { it.copy(terminalCommand = command, terminalCursor = nextCursor) }
-        val session = _ui.value.selectedWorkspaceId?.let(terminalSessions::get) ?: return
+        val session = _ui.value.selectedTerminalTabId?.let(terminalSessions::get) ?: return
         val bytes = terminalEditBytes(previous, previousCursor, command, nextCursor)
         if (bytes.isEmpty()) return
         viewModelScope.launch {
@@ -1089,7 +1517,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun submitTerminalInput() {
-        val session = _ui.value.selectedWorkspaceId?.let(terminalSessions::get) ?: return
+        val session = _ui.value.selectedTerminalTabId?.let(terminalSessions::get) ?: return
         _ui.update { it.copy(terminalCommand = "", terminalCursor = 0) }
         viewModelScope.launch {
             terminalWriteMutex.withLock {
@@ -1129,29 +1557,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openTerminal() {
         val workspaceId = _ui.value.selectedWorkspaceId ?: return
-        if (terminalSessions.containsKey(workspaceId) || terminalReaders[workspaceId]?.isActive == true) return
+        val tabId = _ui.value.selectedTerminalTabId ?: return createTerminalTab()
+        if (terminalSessions.containsKey(tabId) || terminalReaders[tabId]?.isActive == true) return
         val workspacePath = _ui.value.workspaces.firstOrNull { it.id == workspaceId }?.localPath ?: return
-        terminalReaders[workspaceId] = viewModelScope.launch {
+        terminalReaders[tabId] = viewModelScope.launch {
             runCatching { container.runtime.openPty("/home/phoneagent", workspaceHostPath = workspacePath) }
                 .onSuccess { session ->
-                    terminalSessions[workspaceId] = session
+                    terminalSessions[tabId] = session
+                    container.database.dao().upsertTerminalTab(_ui.value.terminalTabs.first { it.id == tabId }.copy(state = "CONNECTED", lastActiveAt = System.currentTimeMillis()))
                     _ui.update { it.copy(
                         terminalConnected = true,
                         terminalOutput = (it.terminalOutput + "\n[PTY 已连接]\n").takeLast(200_000),
                     ) }
-                    terminalOutputs[workspaceId] = _ui.value.terminalOutput
+                    terminalOutputs[tabId] = _ui.value.terminalOutput
                     session.events.collect { event ->
                         when (event) {
-                            is TerminalEvent.Output -> appendTerminal(workspaceId, event.bytes.toString(Charsets.UTF_8))
+                            is TerminalEvent.Output -> appendTerminal(tabId, event.bytes.toString(Charsets.UTF_8))
                             is TerminalEvent.Closed -> {
-                                appendTerminal(workspaceId, "\n[PTY 已退出：${event.exitCode}]\n")
-                                terminalSessions.remove(workspaceId)
-                                if (_ui.value.selectedWorkspaceId == workspaceId) _ui.update { it.copy(terminalConnected = false) }
+                                appendTerminal(tabId, "\n[PTY 已退出：${event.exitCode}]\n")
+                                terminalSessions.remove(tabId)
+                                if (_ui.value.selectedTerminalTabId == tabId) _ui.update { it.copy(terminalConnected = false) }
                             }
                             is TerminalEvent.Failure -> {
-                                appendTerminal(workspaceId, "\n[PTY 错误：${event.message}]\n")
-                                terminalSessions.remove(workspaceId)
-                                if (_ui.value.selectedWorkspaceId == workspaceId) _ui.update { it.copy(terminalConnected = false) }
+                                appendTerminal(tabId, "\n[PTY 错误：${event.message}]\n")
+                                terminalSessions.remove(tabId)
+                                if (_ui.value.selectedTerminalTabId == tabId) _ui.update { it.copy(terminalConnected = false) }
                             }
                         }
                     }
@@ -1163,16 +1593,75 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeTerminal() {
-        val workspaceId = _ui.value.selectedWorkspaceId ?: return
-        terminalSessions.remove(workspaceId)?.close()
-        terminalReaders.remove(workspaceId)?.cancel()
+        val tabId = _ui.value.selectedTerminalTabId ?: return
+        terminalSessions.remove(tabId)?.close()
+        terminalReaders.remove(tabId)?.cancel()
         _ui.update { it.copy(terminalConnected = false) }
+        viewModelScope.launch(Dispatchers.IO) {
+            _ui.value.terminalTabs.firstOrNull { it.id == tabId }?.let { tab ->
+                container.database.dao().upsertTerminalTab(tab.copy(state = "DISCONNECTED", lastActiveAt = System.currentTimeMillis()))
+            }
+        }
+    }
+
+    fun createTerminalTab() {
+        val workspaceId = _ui.value.selectedWorkspaceId ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = container.database.dao().terminalTabs(workspaceId)
+            val tab = TerminalTabEntity(
+                id = UUID.randomUUID().toString(),
+                workspaceId = workspaceId,
+                title = "终端 ${current.size + 1}",
+                cwd = "/home/phoneagent",
+                sortIndex = current.size,
+            )
+            container.database.dao().upsertTerminalTab(tab)
+            _ui.update { it.copy(terminalTabs = current + tab, selectedTerminalTabId = tab.id, terminalConnected = false, terminalOutput = "") }
+        }
+    }
+
+    fun selectTerminalTab(tabId: String) {
+        if (_ui.value.terminalTabs.none { it.id == tabId }) return
+        _ui.update { it.copy(
+            selectedTerminalTabId = tabId,
+            terminalConnected = terminalSessions.containsKey(tabId),
+            terminalOutput = terminalOutputs[tabId].orEmpty(),
+            terminalCommand = "",
+            terminalCursor = 0,
+        ) }
+    }
+
+    fun removeTerminalTab(tabId: String) {
+        val workspaceId = _ui.value.selectedWorkspaceId ?: return
+        terminalSessions.remove(tabId)?.close()
+        terminalReaders.remove(tabId)?.cancel()
+        terminalOutputs.remove(tabId)
+        viewModelScope.launch(Dispatchers.IO) {
+            container.database.dao().deleteTerminalTab(tabId)
+            loadTerminalTabs(workspaceId)
+        }
+    }
+
+    private suspend fun loadTerminalTabs(workspaceId: String) {
+        var tabs = container.database.dao().terminalTabs(workspaceId)
+        if (tabs.isEmpty()) {
+            val tab = TerminalTabEntity(UUID.randomUUID().toString(), workspaceId, "终端 1", "/home/phoneagent")
+            container.database.dao().upsertTerminalTab(tab)
+            tabs = listOf(tab)
+        }
+        val selected = _ui.value.selectedTerminalTabId?.takeIf { id -> tabs.any { it.id == id } } ?: tabs.first().id
+        _ui.update { it.copy(
+            terminalTabs = tabs,
+            selectedTerminalTabId = selected,
+            terminalConnected = terminalSessions.containsKey(selected),
+            terminalOutput = terminalOutputs[selected].orEmpty(),
+        ) }
     }
 
     fun runTerminalCommand() {
         val command = _ui.value.terminalCommand.trim()
         if (command.isEmpty()) return
-        val session = _ui.value.selectedWorkspaceId?.let(terminalSessions::get)
+        val session = _ui.value.selectedTerminalTabId?.let(terminalSessions::get)
         if (session == null) {
             _ui.update { it.copy(message = "请先启动 PTY 终端") }
             return
@@ -1185,7 +1674,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendTerminalInterrupt() {
-        val session = _ui.value.selectedWorkspaceId?.let(terminalSessions::get) ?: return
+        val session = _ui.value.selectedTerminalTabId?.let(terminalSessions::get) ?: return
         viewModelScope.launch { runCatching { session.write(byteArrayOf(3)) } }
     }
 
@@ -1203,6 +1692,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         if (container.providerSettings.credentialFor(profile.id) != null) refreshModels()
         persistSelectedSessionModel(normalized)
+        restartActiveHarnessConfiguration()
     }
 
     fun addProvider(template: ProviderProfile = ProviderPresets.all.first()) {
@@ -1219,6 +1709,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val next = container.providerSettings.profile.value
                 _ui.update { it.copy(provider = next, providerApiKey = "", availableModels = emptyList()) }
                 if (container.providerSettings.credentialFor(next.id) != null) refreshModels()
+                restartActiveHarnessConfiguration()
             }
         }
     }
@@ -1268,7 +1759,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             container.providerSettings.save(state.provider, chars)
             chars?.fill('\u0000')
             _ui.update { it.copy(providerApiKey = "", providerSaved = true, message = "Provider settings encrypted and saved") }
+            restartActiveHarnessConfiguration()
             refreshModels()
+        }
+    }
+
+    private fun restartActiveHarnessConfiguration() {
+        val kind = _ui.value.activeHarnessKind
+        if (kind !in setOf(HarnessKind.CODEX, HarnessKind.CLAUDE_CODE)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { container.harnessWebRuntime.restart(kind) }
+                .onFailure { error ->
+                    val label = when (kind) {
+                        HarnessKind.CODEX -> "Codex"
+                        HarnessKind.CLAUDE_CODE -> "Claude Code"
+                        HarnessKind.DSH -> "DeepSeek Harness"
+                        HarnessKind.MANAGER -> "sai 总管"
+                    }
+                    _ui.update { it.copy(message = "$label 配置同步失败：${error.message}") }
+                }
         }
     }
 
@@ -1369,36 +1878,75 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             installDownloadedVoiceModelPack()
             return
         }
+        val workManager = WorkManager.getInstance(getApplication())
+        val request = OneTimeWorkRequestBuilder<VoicePackDownloadWorker>().build()
+        // REPLACE restarts the worker but preserves the verified .part + ETag download state.
+        workManager.enqueueUniqueWork(VoicePackDownloadWorker.UNIQUE_WORK, ExistingWorkPolicy.REPLACE, request)
+        _ui.update { it.copy(voiceModelPackBusy = true, voiceModelPackProgress = "正在建立可恢复下载任务…") }
+        observeVoicePackWork(request.id)
+    }
+
+    private fun restoreVoicePackDownloadObservation() {
         viewModelScope.launch {
-            _ui.update { it.copy(voiceModelPackBusy = true, voiceModelPackProgress = "正在查询 GitHub Release…") }
-            runCatching {
-                val asset = appUpdateManager.latestApkAsset(VoiceModelPack.ASSET_NAME)
-                    ?: error("当前 GitHub Releases 中没有可安装的 sai Voice Pack")
-                _ui.update { it.copy(voiceModelPackProgress = "找到 ${asset.tag}，正在下载…") }
-                appUpdateManager.downloadModule(asset, VoiceModelPack.PACKAGE_NAME) { copied, total ->
-                    _ui.update {
-                        val percent = if (total > 0) (copied * 100 / total).coerceIn(0, 100) else null
-                        it.copy(voiceModelPackProgress = percent?.let { value -> "正在下载 $value%" } ?: "正在下载语音模型包…")
+            val manager = WorkManager.getInstance(getApplication())
+            val active = withContext(Dispatchers.IO) {
+                manager.getWorkInfosForUniqueWork(VoicePackDownloadWorker.UNIQUE_WORK).get()
+                    .lastOrNull { !it.state.isFinished }
+            }
+            active?.let { info ->
+                _ui.update { it.copy(voiceModelPackBusy = true, voiceModelPackProgress = "正在恢复语音包下载状态…") }
+                observeVoicePackWork(info.id)
+            }
+        }
+    }
+
+    private fun observeVoicePackWork(id: UUID) {
+        if (!observedVoicePackWorks.add(id)) return
+        val workManager = WorkManager.getInstance(getApplication())
+        viewModelScope.launch {
+            workManager.getWorkInfoByIdFlow(id).collectLatest { nullableInfo ->
+                val info = nullableInfo ?: return@collectLatest
+                val data = if (info.state.isFinished) info.outputData else info.progress
+                val copied = data.getLong(VoicePackDownloadWorker.KEY_DOWNLOADED, 0)
+                val total = data.getLong(VoicePackDownloadWorker.KEY_TOTAL, 0)
+                val stage = data.getString(VoicePackDownloadWorker.KEY_STAGE)
+                val percent = if (total > 0) (copied * 100 / total).coerceIn(0, 100) else null
+                when (info.state) {
+                    WorkInfo.State.SUCCEEDED -> {
+                        val path = info.outputData.getString(VoicePackDownloadWorker.KEY_APK_PATH)
+                        _ui.update { it.copy(
+                            voiceModelPackBusy = false,
+                            voiceModelPackProgress = "SHA-256、包名与签名校验完成",
+                            voiceModelPackApkPath = path,
+                        ) }
+                        if (path != null) installDownloadedVoiceModelPack()
+                        observedVoicePackWorks.remove(id)
                     }
-                }
-            }.onSuccess { apk ->
-                _ui.update {
-                    it.copy(
-                        voiceModelPackBusy = false,
-                        voiceModelPackProgress = "SHA-256、包名与签名校验完成",
-                        voiceModelPackApkPath = apk.absolutePath,
-                    )
-                }
-                installDownloadedVoiceModelPack()
-            }.onFailure { error ->
-                _ui.update {
-                    it.copy(
-                        voiceModelPackBusy = false,
-                        voiceModelPackProgress = error.message ?: "语音模型包下载失败",
-                    )
+                    WorkInfo.State.FAILED -> {
+                        observedVoicePackWorks.remove(id)
+                        _ui.update { it.copy(
+                            voiceModelPackBusy = false,
+                            voiceModelPackProgress = info.outputData.getString(VoicePackDownloadWorker.KEY_ERROR)
+                                ?: "下载失败，可重试并从断点继续",
+                        ) }
+                    }
+                    WorkInfo.State.CANCELLED -> {
+                        observedVoicePackWorks.remove(id)
+                        _ui.update { it.copy(voiceModelPackBusy = false, voiceModelPackProgress = "下载已暂停，稍后可继续") }
+                    }
+                    else -> _ui.update { it.copy(
+                        voiceModelPackBusy = true,
+                        voiceModelPackProgress = percent?.let { value -> "${stage ?: "正在下载"} $value%" }
+                            ?: (stage ?: "等待下载服务…"),
+                    ) }
                 }
             }
         }
+    }
+
+    fun pauseVoiceModelPackDownload() {
+        WorkManager.getInstance(getApplication()).cancelUniqueWork(VoicePackDownloadWorker.UNIQUE_WORK)
+        _ui.update { it.copy(voiceModelPackBusy = false, voiceModelPackProgress = "正在暂停；已下载部分会保留") }
     }
 
     fun installDownloadedVoiceModelPack() {
@@ -1890,6 +2438,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun cancelExtensionInstall() = _ui.update { it.copy(extensionPlan = null, extensionAudit = null) }
 
+    fun setExtensionHarnessScope(scope: String) {
+        require(scope in setOf("DSH", "CODEX", "CLAUDE_CODE", "GENERAL"))
+        _ui.update { it.copy(extensionHarnessScope = scope) }
+    }
+
+    fun setExtensionInstallGlobal(global: Boolean) = _ui.update { it.copy(extensionInstallGlobal = global) }
+
     fun confirmExtensionInstall() {
         val plan = _ui.value.extensionPlan ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -1906,6 +2461,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             sourceDigest = plan.sourceDigest,
                             installState = "INSTALLED",
                             rollbackVersion = existing.version,
+                            workspaceId = if (_ui.value.extensionInstallGlobal) null else _ui.value.selectedWorkspaceId,
+                            harnessKind = _ui.value.extensionHarnessScope.takeUnless { it == "GENERAL" },
+                            scope = if (_ui.value.extensionInstallGlobal) "GLOBAL" else "PROJECT",
                         ) ?: ExtensionEntity(
                             id = plan.id,
                             kind = plan.kind.name,
@@ -1915,6 +2473,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             enabled = false,
                             version = plan.version,
                             sourceDigest = plan.sourceDigest,
+                            workspaceId = if (_ui.value.extensionInstallGlobal) null else _ui.value.selectedWorkspaceId,
+                            harnessKind = _ui.value.extensionHarnessScope.takeUnless { it == "GENERAL" },
+                            scope = if (_ui.value.extensionInstallGlobal) "GLOBAL" else "PROJECT",
                         ),
                     )
                     if (existing?.enabled == true && plan.kind == ExtensionKind.PLUGIN) {
@@ -2090,10 +2651,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshAllFilesAccess() = _ui.update { it.copy(allFilesAccess = hasAllFilesAccess()) }
 
     private fun safeFile(path: String): File {
-        val root = selectedWorkspaceDirectory().canonicalFile
+        val root = activeFileRoot().canonicalFile
         val file = File(root, path).canonicalFile
         require(file == root || file.path.startsWith(root.path + File.separator)) { "Path escapes workspace" }
         return file
+    }
+
+    private fun activeFileRoot(): File {
+        val app = getApplication<Application>()
+        val id = _ui.value.fileRootId
+        val root = when {
+            id == "sai" -> app.filesDir
+            id == "dsh" -> File(app.filesDir, "dsh")
+            id == "debian" -> File(container.rootfsInstaller.rootfsDir, "home/phoneagent")
+            id.startsWith("workspace:") -> {
+                val workspaceId = id.removePrefix("workspace:")
+                _ui.value.workspaces.firstOrNull { it.id == workspaceId }?.let { File(it.localPath) }
+                    ?: app.filesDir
+            }
+            else -> app.filesDir
+        }
+        return root.apply { mkdirs() }
     }
 
     private fun selectedWorkspace(): WorkspaceEntity? =
@@ -2139,7 +2717,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val readable = ANSI_ESCAPE.replace(text, "")
         val next = applyTerminalControls(terminalOutputs[workspaceId].orEmpty(), readable).takeLast(200_000)
         terminalOutputs[workspaceId] = next
-        if (_ui.value.selectedWorkspaceId == workspaceId) _ui.update { it.copy(terminalOutput = next) }
+        if (_ui.value.selectedTerminalTabId == workspaceId) _ui.update { it.copy(terminalOutput = next) }
     }
 
     private fun applyTerminalControls(current: String, incoming: String): String {

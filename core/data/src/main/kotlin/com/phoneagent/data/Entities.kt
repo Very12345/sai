@@ -120,6 +120,11 @@ data class ExtensionEntity(
     val installState: String = "INSTALLED",
     val profileId: String? = null,
     val rollbackVersion: String? = null,
+    val workspaceId: String? = null,
+    val harnessKind: String? = null,
+    val scope: String = "GLOBAL",
+    val autoUpdate: Boolean = true,
+    val compatibilityRange: String = "",
 )
 
 @Entity(
@@ -138,7 +143,113 @@ data class TerminalTabEntity(
     val title: String = "Terminal",
     val cwd: String,
     val state: String = "DISCONNECTED",
+    val sortIndex: Int = 0,
+    val createdAt: Long = System.currentTimeMillis(),
     val lastActiveAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "harness_runtimes")
+data class HarnessRuntimeEntity(
+    @PrimaryKey val harnessKind: String,
+    val version: String = "",
+    val installState: String = "NOT_INSTALLED",
+    val binaryPath: String? = null,
+    val capabilitiesJson: String = "{}",
+    val previousVersion: String? = null,
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(
+    tableName = "harness_session_bindings",
+    foreignKeys = [ForeignKey(
+        entity = SessionEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["sessionId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("sessionId"), Index("workspaceId"), Index(value = ["harnessKind", "externalSessionId"], unique = true)],
+)
+data class HarnessSessionBindingEntity(
+    @PrimaryKey val id: String,
+    val sessionId: String,
+    val workspaceId: String,
+    val harnessKind: String,
+    val externalSessionId: String,
+    val runtimeVersion: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "harness_default_configs", indices = [Index("workspaceId"), Index("harnessKind")])
+data class HarnessDefaultConfigEntity(
+    @PrimaryKey val id: String,
+    val workspaceId: String? = null,
+    val harnessKind: String,
+    val providerId: String,
+    val modelId: String,
+    val reasoningConfigJson: String = "{\"mode\":\"AUTO\",\"effort\":null,\"budgetTokens\":null}",
+    val permissionMode: String = "WORKSPACE_WRITE",
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(
+    tableName = "trash_entries",
+    foreignKeys = [ForeignKey(
+        entity = WorkspaceEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["workspaceId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("workspaceId"), Index("deletedAt")],
+)
+data class TrashEntryEntity(
+    @PrimaryKey val id: String,
+    val workspaceId: String,
+    val originalPath: String,
+    val trashPath: String,
+    val displayName: String,
+    val directory: Boolean,
+    val sizeBytes: Long = 0,
+    val deletedAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "manager_task_links", indices = [Index("managerSessionId"), Index("targetSessionId")])
+data class ManagerTaskLinkEntity(
+    @PrimaryKey val id: String,
+    val managerSessionId: String,
+    val targetSessionId: String,
+    val workspaceId: String,
+    val harnessKind: String,
+    val state: String = "CREATED",
+    val summary: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "manager_triggers", indices = [Index("enabled"), Index("nextRunAt")])
+data class ManagerTriggerEntity(
+    @PrimaryKey val id: String,
+    val displayName: String,
+    val triggerType: String,
+    val configJson: String,
+    val actionJson: String,
+    val enabled: Boolean = false,
+    val pausedByExit: Boolean = false,
+    val lastRunAt: Long? = null,
+    val nextRunAt: Long? = null,
+    val lastResult: String = "",
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
+@Entity(tableName = "pet_overlay_state")
+data class PetOverlayStateEntity(
+    @PrimaryKey val id: String = "default",
+    val xFraction: Float = 0.82f,
+    val yFraction: Float = 0.18f,
+    val docked: Boolean = true,
+    val keepAlive: Boolean = true,
+    val radialMenuEnabled: Boolean = true,
+    val updatedAt: Long = System.currentTimeMillis(),
 )
 
 @Entity(

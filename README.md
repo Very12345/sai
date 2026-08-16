@@ -4,11 +4,12 @@ sai is a GPLv3 Android coding agent designed around a local workspace. Its name 
 a Debian/PRoot-compatible runtime, explicit tool approvals, and bring-your-own
 model API credentials.
 
-## Current implementation (1.2.0 DSH preview 6)
+## Current implementation (1.3.0 / runtime r57)
 
-- Official DeepSeek Harness is the sole interactive Agent engine. The APK starts pinned DSH 0.1.0-rc.6
-  on offline Node 24.19.0 inside app-private Debian/PRoot and embeds its authenticated Web client in
-  the Compose shell.
+- sai now provides three real Harness clients instead of reimplementing their agent loops: pinned
+  DeepSeek Harness 0.1.0-rc.6, official Codex through `codex app-server`, and Claude Code through its
+  matching Agent SDK/CLI protocol. Node 24.19.0, Codex 0.147.0 and Claude Code 2.1.233 are carried in
+  the verified offline runtime; each client keeps its native projects, history, commands and approvals.
 - Android projects, models and legacy conversations migrate without exposing credentials. DSH resolves
   provider references through an Android Keystore credential plugin, and the old Kotlin loop no longer
   receives main UI, voice, desktop or diagnostic tasks.
@@ -49,7 +50,8 @@ model API credentials.
   JavaScript interface exposed to web pages.
 - A Tauri 2 Windows companion with QR pairing, a pinned-certificate TLS
   WebSocket, X25519/HKDF/AES-GCM application encryption, project/session lists,
-  conflict-safe text editing, and basic Agent conversations. Desktop requests
+  conflict-safe text editing, basic Agent conversations, and source-format DSH/Codex/Claude session
+  synchronization with SHA-256 conflict checks. Desktop requests
   cannot approve dangerous actions on behalf of the phone.
 - ABI-matched PRoot/loader libraries for ARM64 and x86_64, a native `forkpty`
   bridge, and an interactive terminal surface.
@@ -78,7 +80,7 @@ includes the compact two-row composer, canvas-style PTY terminal, single-instanc
 task pet, settings search, and full application themes.
 
 The `desktop` directory contains the Tauri 2 companion and its security notes.
-The encrypted live session is implemented in 0.2.0. Automatic mDNS reconnection
+The encrypted live session and Harness conversation synchronization are implemented. Automatic mDNS reconnection
 and persistent Windows Credential Manager identity are still tracked as the
 next connection-hardening milestone; a desktop restart currently requires a
 fresh QR scan.

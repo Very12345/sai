@@ -71,6 +71,7 @@ class DesktopConnectionManager(
     @Volatile private var socket: WebSocket? = null
     @Volatile private var sessionKey: ByteArray? = null
     @Volatile private var client: OkHttpClient? = null
+    @Volatile private var grantedScopes: Set<String> = emptySet()
 
     fun pair(qrPayload: String) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -96,6 +97,7 @@ class DesktopConnectionManager(
         client?.dispatcher?.executorService?.shutdown()
         client = null
         seenNonces.clear()
+        grantedScopes = emptySet()
         _status.value = "未连接电脑"
         if (notifyService) runCatching {
             context.startService(Intent(context, AgentForegroundService::class.java).setAction(AgentForegroundService.ACTION_STOP_DESKTOP))
@@ -123,7 +125,7 @@ class DesktopConnectionManager(
         val scopes = root["scopes"]?.let { element ->
             element.toString().let { Regex("\"([^\"]+)\"").findAll(it).map { match -> match.groupValues[1] }.toSet() }
         }.orEmpty()
-        val allowed = setOf("project.read", "project.write", "chat")
+        val allowed = setOf("project.read", "project.write", "chat", "harness.sync")
         require(scopes.isNotEmpty() && scopes.all(allowed::contains)) { "二维码请求了未知权限" }
         return Offer(
             endpoint,
@@ -181,6 +183,7 @@ class DesktopConnectionManager(
                                 "电脑配对证明无效"
                             }
                             sessionKey = derived.copyOf()
+                            grantedScopes = offer.scopes
                             _status.value = "已加密连接 ${URI(offer.endpoint).host}"
                             ContextCompat.startForegroundService(
                                 context,
@@ -239,12 +242,16 @@ class DesktopConnectionManager(
         val id = request.requiredString("id")
         val payload = request["payload"]?.jsonObject ?: request
         runCatching {
+            require(requiredScope(command) in grantedScopes) { "电脑未获授权执行 $command" }
             when (command) {
                 "state.list" -> stateList()
                 "project.files" -> projectFiles(payload)
                 "file.read" -> readFile(payload)
                 "file.write" -> writeFile(payload)
                 "chat.send" -> startChat(payload)
+                "harness.sync.manifest" -> harnessSyncManifest()
+                "harness.sync.read" -> readHarnessSession(payload)
+                "harness.sync.write" -> writeHarnessSession(payload)
                 else -> error("不支持的桌面命令：$command")
             }
         }.fold(
@@ -337,6 +344,87 @@ class DesktopConnectionManager(
         return buildJsonObject { put("sessionId", sessionId) }
     }
 
+    /**
+     * Lists the native durable conversation artifacts rather than converting
+     * them to sai's Room schema. Keeping the source format means a desktop
+     * Codex/Claude/DSH client can resume the exact same conversation after a
+     * conflict-checked copy.
+     */
+    private fun harnessSyncManifest(): JsonObject = buildJsonObject {
+        put("version", 1)
+        put("files", buildJsonArray {
+            harnessSessionRoots().forEach { (harness, root) ->
+                if (!root.isDirectory) return@forEach
+                root.walkTopDown()
+                    .onEnter { directory -> !Files.isSymbolicLink(directory.toPath()) }
+                    .filter { file -> file.isFile && !Files.isSymbolicLink(file.toPath()) }
+                    .take(MAX_SYNC_FILES)
+                    .forEach { file ->
+                        val relative = file.relativeTo(root).invariantSeparatorsPath
+                        if (file.length() <= MAX_SYNC_FILE) add(buildJsonObject {
+                            put("harness", harness)
+                            put("path", relative)
+                            put("size", file.length())
+                            put("modifiedAt", file.lastModified())
+                            put("sha256", sha256Hex(file.readBytes()))
+                        })
+                    }
+            }
+        })
+    }
+
+    private fun readHarnessSession(payload: JsonObject): JsonObject {
+        val harness = payload.requiredString("harness")
+        val relative = payload.requiredString("path")
+        val root = harnessSessionRoots()[harness] ?: error("未知 Harness")
+        val file = safePath(root, relative)
+        require(file.isFile && file.length() <= MAX_SYNC_FILE) { "会话文件不存在或超过 16 MB" }
+        val bytes = file.readBytes()
+        return buildJsonObject {
+            put("harness", harness)
+            put("path", relative)
+            put("sha256", sha256Hex(bytes))
+            put("content", Base64.getEncoder().encodeToString(bytes))
+        }
+    }
+
+    private fun writeHarnessSession(payload: JsonObject): JsonObject {
+        val harness = payload.requiredString("harness")
+        val relative = payload.requiredString("path")
+        val root = harnessSessionRoots()[harness] ?: error("未知 Harness")
+        val target = safePath(root, relative)
+        val content = Base64.getDecoder().decode(payload.requiredString("content"))
+        require(content.size <= MAX_SYNC_FILE) { "会话文件超过 16 MB" }
+        val expected = payload["expectedSha256"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        if (target.exists()) {
+            require(target.isFile && expected.isNotBlank() && sha256Hex(target.readBytes()) == expected) {
+                "手机端会话已变化；请重新同步后再覆盖"
+            }
+        } else {
+            require(expected.isEmpty()) { "会话文件已被移动或删除" }
+        }
+        target.parentFile?.mkdirs()
+        val temporary = File(target.parentFile, ".${target.name}.sai-sync-${UUID.randomUUID()}.tmp")
+        temporary.writeBytes(content)
+        runCatching { Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
+            .getOrElse { Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+        return buildJsonObject { put("harness", harness); put("path", relative); put("sha256", sha256Hex(content)) }
+    }
+
+    private fun harnessSessionRoots(): Map<String, File> = mapOf(
+        "codex" to File(container.dshProvisioner.home, ".codex/sessions"),
+        "claude-code" to File(container.dshProvisioner.home, ".claude/projects"),
+        "dsh" to File(container.dshProvisioner.home, "sessions"),
+    )
+
+    private fun requiredScope(command: String): String = when (command) {
+        "state.list", "project.files", "file.read" -> "project.read"
+        "file.write" -> "project.write"
+        "chat.send" -> "chat"
+        "harness.sync.manifest", "harness.sync.read", "harness.sync.write" -> "harness.sync"
+        else -> error("不支持的桌面命令：$command")
+    }
+
     private suspend fun workspace(id: String) = container.database.dao().workspace(id) ?: error("项目不存在")
 
     private fun safePath(root: File, relative: String): File {
@@ -385,6 +473,8 @@ class DesktopConnectionManager(
 
     companion object {
         private const val MAX_REMOTE_FILE = 2L * 1024 * 1024
+        private const val MAX_SYNC_FILE = 16L * 1024 * 1024
+        private const val MAX_SYNC_FILES = 5_000
         private val X25519_PREFIX = byteArrayOf(0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x03, 0x21, 0x00)
     }
 }

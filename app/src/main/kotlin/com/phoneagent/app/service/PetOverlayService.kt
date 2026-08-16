@@ -3,19 +3,30 @@ package com.phoneagent.app.service
 import android.animation.ValueAnimator
 import android.app.PendingIntent
 import android.app.Service
+import android.app.NotificationManager
 import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.drawable.GradientDrawable
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
+import android.view.ViewGroup
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.animation.LinearInterpolator
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import com.phoneagent.app.MainActivity
 import com.phoneagent.app.PhoneAgentApplication
@@ -30,12 +41,16 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Compact transparent companion used only when sai is detached above other apps. */
 class PetOverlayService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var windowManager: WindowManager
     private var petView: SailRobotView? = null
+    private var overlayRoot: FrameLayout? = null
+    private var overlayLayout: WindowManager.LayoutParams? = null
+    private val radialActions = mutableListOf<View>()
 
     override fun onCreate() {
         super.onCreate()
@@ -51,6 +66,18 @@ class PetOverlayService : Service() {
             VoiceConversationController.state.collectLatest { state ->
                 petView?.voiceActive = state.active
                 petView?.statusText = state.transcript.takeIf { state.active && it.isNotBlank() } ?: petView?.statusText.orEmpty()
+            }
+        }
+        scope.launch {
+            (application as PhoneAgentApplication).container.dshBridge.taskEvents.collectLatest { event ->
+                when (event.phase) {
+                    "completed" -> showTransientEvent("任务完成", event.detail.ifBlank { "任务已完成" }, false)
+                    "failed" -> showTransientEvent("任务失败", event.detail.ifBlank { "点击宠物查看详情" }, true)
+                    "waiting-approval" -> petView?.apply {
+                        waitingApproval = true
+                        statusText = event.detail.ifBlank { "需要批准，点击查看" }
+                    }
+                }
             }
         }
     }
@@ -73,7 +100,7 @@ class PetOverlayService : Service() {
             NotificationCompat.Builder(this, PhoneAgentApplication.AGENT_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_phone_agent)
                 .setContentTitle("sai 任务机器人")
-                .setContentText("透明悬浮帆船显示任务；点击麦克风可开始语音通话")
+                .setContentText("双击宠物可输入文字、开始语音、停止或收起")
                 .setOngoing(true)
                 .setContentIntent(openSaiIntent(41))
                 .addAction(
@@ -93,6 +120,243 @@ class PetOverlayService : Service() {
     }
 
     private fun showOverlay() {
+        if (overlayRoot != null) return
+        val density = resources.displayMetrics.density
+        val rootSize = (196 * density).toInt()
+        val petWidth = (84 * density).toInt()
+        val petHeight = (80 * density).toInt()
+        val saved = getSharedPreferences("sai-ui", 0)
+        var restoredX = saved.getInt("system_pet_x", resources.displayMetrics.widthPixels - rootSize)
+        var restoredY = saved.getInt("system_pet_y", (90 * density).toInt())
+        val layout = WindowManager.LayoutParams(
+            rootSize,
+            rootSize,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            android.graphics.PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = restoredX.coerceIn(0, (resources.displayMetrics.widthPixels - rootSize).coerceAtLeast(0))
+            y = restoredY.coerceIn(0, (resources.displayMetrics.heightPixels - rootSize).coerceAtLeast(0))
+        }
+        overlayLayout = layout
+        val root = FrameLayout(this).apply { clipChildren = false; clipToPadding = false }
+        val view = SailRobotView(
+            context = this,
+            theme = saved.getString("app_theme", saved.getString("pet_theme", "aurora")).orEmpty(),
+            onMove = { dx, dy ->
+                layout.x = (layout.x + dx).coerceIn(0, (resources.displayMetrics.widthPixels - rootSize).coerceAtLeast(0))
+                layout.y = (layout.y + dy).coerceIn(0, (resources.displayMetrics.heightPixels - rootSize).coerceAtLeast(0))
+                windowManager.updateViewLayout(root, layout)
+            },
+            onOpen = {
+                startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            },
+            onVoice = {},
+            onPositionSaved = {
+                restoredX = layout.x
+                restoredY = layout.y
+                saved.edit().putInt("system_pet_x", restoredX).putInt("system_pet_y", restoredY).apply()
+            },
+            onMinimize = {
+                saved.edit().putBoolean("system_pet_enabled", false).putBoolean("task_pet_visible", true).apply()
+                stopSelf()
+            },
+            onRestore = {},
+            radialMenuEnabled = true,
+            onRadialToggle = { toggleRadialMenu() },
+        ).apply {
+            showCloseControl = false
+            showVoiceControl = false
+        }
+        petView = view
+        root.addView(view, FrameLayout.LayoutParams(petWidth, petHeight, Gravity.CENTER))
+        radialActions += root.addRadialAction("停", 75, 4) { showExitConfirmation() }
+        radialActions += root.addRadialAction("文", 4, 75) { showTextComposer() }
+        radialActions += root.addRadialAction("声", 146, 75) {
+            toggleRadialMenu(false)
+            startActivity(Intent(this, VoiceStartActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+        radialActions += root.addRadialAction("收", 75, 146) {
+            toggleRadialMenu(false)
+            saved.edit().putBoolean("system_pet_enabled", false).putBoolean("task_pet_visible", true).apply()
+            stopSelf()
+        }
+        overlayRoot = root
+        windowManager.addView(root, layout)
+    }
+
+    private fun FrameLayout.addRadialAction(label: String, leftDp: Int, topDp: Int, action: () -> Unit): View {
+        val density = resources.displayMetrics.density
+        return TextView(this@PetOverlayService).apply {
+            text = label
+            gravity = Gravity.CENTER
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(238, 24, 35, 65))
+                setStroke((1.2f * density).toInt(), Color.argb(210, 66, 213, 255))
+            }
+            elevation = 8 * density
+            visibility = View.GONE
+            setOnClickListener { action() }
+            this@addRadialAction.addView(this, FrameLayout.LayoutParams((46 * density).toInt(), (46 * density).toInt()).apply {
+                leftMargin = (leftDp * density).toInt()
+                topMargin = (topDp * density).toInt()
+            })
+        }
+    }
+
+    private fun toggleRadialMenu(show: Boolean? = null) {
+        val visible = show ?: radialActions.none { it.visibility == View.VISIBLE }
+        closePanel()
+        radialActions.forEach { it.visibility = if (visible) View.VISIBLE else View.GONE }
+        if (visible) Handler(Looper.getMainLooper()).postDelayed({ toggleRadialMenu(false) }, 8_000)
+    }
+
+    private fun showTextComposer() {
+        toggleRadialMenu(false)
+        val root = overlayRoot ?: return
+        val density = resources.displayMetrics.density
+        val row = LinearLayout(this).apply {
+            tag = PANEL_TAG
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((8 * density).toInt(), (6 * density).toInt(), (6 * density).toInt(), (6 * density).toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = 18 * density
+                setColor(Color.argb(246, 20, 28, 48))
+                setStroke((1 * density).toInt(), Color.argb(180, 64, 208, 255))
+            }
+        }
+        val input = EditText(this).apply {
+            hint = "告诉 sai 总管要做什么"
+            setHintTextColor(Color.LTGRAY)
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            maxLines = 3
+            imeOptions = EditorInfo.IME_ACTION_SEND
+            setBackgroundColor(Color.TRANSPARENT)
+        }
+        val send = TextView(this).apply {
+            text = "发送"
+            setTextColor(Color.rgb(83, 220, 255))
+            textSize = 13f
+            gravity = Gravity.CENTER
+        }
+        row.addView(input, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(send, LinearLayout.LayoutParams((48 * density).toInt(), (42 * density).toInt()))
+        root.addView(row, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        fun submit() {
+            val text = input.text?.toString()?.trim().orEmpty()
+            if (text.isNotBlank()) submitManagerCommand(text)
+            closePanel()
+        }
+        send.setOnClickListener { submit() }
+        input.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEND) { submit(); true } else false
+        }
+        val layout = overlayLayout ?: return
+        layout.flags = WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        layout.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        windowManager.updateViewLayout(root, layout)
+        input.requestFocus()
+        input.post { getSystemService(InputMethodManager::class.java).showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) }
+    }
+
+    private fun submitManagerCommand(text: String) {
+        petView?.statusText = "正在部署任务"
+        scope.launch {
+            runCatching { (application as PhoneAgentApplication).container.managerHarness.dispatch(text) }
+                .onSuccess { result -> showTransientEvent("已部署任务", "${result.projectName} · ${result.harnessKind}", false) }
+                .onFailure { error -> showTransientEvent("部署失败", error.message ?: "无法创建任务", true) }
+        }
+    }
+
+    private fun showExitConfirmation() {
+        toggleRadialMenu(false)
+        val root = overlayRoot ?: return
+        val density = resources.displayMetrics.density
+        val panel = LinearLayout(this).apply {
+            tag = PANEL_TAG
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding((12 * density).toInt(), (10 * density).toInt(), (12 * density).toInt(), (10 * density).toInt())
+            background = GradientDrawable().apply { cornerRadius = 18 * density; setColor(Color.argb(248, 28, 30, 43)) }
+        }
+        panel.addView(TextView(this).apply {
+            text = "停止全部任务并退出 sai？"
+            setTextColor(Color.WHITE); textSize = 13f; gravity = Gravity.CENTER
+        })
+        val actions = LinearLayout(this).apply { gravity = Gravity.CENTER }
+        actions.addView(TextView(this).apply {
+            text = "取消"; setTextColor(Color.LTGRAY); gravity = Gravity.CENTER
+            setOnClickListener { closePanel() }
+        }, LinearLayout.LayoutParams((70 * density).toInt(), (42 * density).toInt()))
+        actions.addView(TextView(this).apply {
+            text = "退出"; setTextColor(Color.rgb(255, 105, 120)); gravity = Gravity.CENTER
+            setOnClickListener { shutdownApplication() }
+        }, LinearLayout.LayoutParams((70 * density).toInt(), (42 * density).toInt()))
+        panel.addView(actions)
+        root.addView(panel, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+    }
+
+    private fun closePanel() {
+        overlayRoot?.findViewWithTag<View>(PANEL_TAG)?.let { panel ->
+            getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(panel.windowToken, 0)
+            overlayRoot?.removeView(panel)
+        }
+        restoreOverlayFocus()
+    }
+
+    private fun restoreOverlayFocus() {
+        val root = overlayRoot ?: return
+        val layout = overlayLayout ?: return
+        layout.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        runCatching { windowManager.updateViewLayout(root, layout) }
+    }
+
+    private fun shutdownApplication() {
+        petView?.statusText = "正在安全退出"
+        scope.launch {
+            val app = application as PhoneAgentApplication
+            withContext(Dispatchers.IO) {
+                runCatching { app.container.database.dao().pauseTriggersForExit() }
+                runCatching { app.container.dshApi.cancelAll() }
+                runCatching { app.container.dshRuntime.stop() }
+            }
+            getSharedPreferences("sai-ui", 0).edit()
+                .putBoolean("system_pet_enabled", false)
+                .putBoolean("task_pet_visible", true)
+                .apply()
+            stopService(Intent(this@PetOverlayService, VoiceConversationService::class.java))
+            startActivity(Intent(this@PetOverlayService, MainActivity::class.java).apply {
+                action = MainActivity.ACTION_EXIT_APPLICATION
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            })
+            stopSelf()
+        }
+    }
+
+    private fun showTransientEvent(title: String, detail: String, error: Boolean) {
+        petView?.statusText = detail.take(48)
+        getSystemService(NotificationManager::class.java).notify(
+            (System.currentTimeMillis() and 0x7fffffff).toInt(),
+            NotificationCompat.Builder(this, PhoneAgentApplication.AGENT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_phone_agent)
+                .setContentTitle(title)
+                .setContentText(detail)
+                .setAutoCancel(true)
+                .setContentIntent(openSaiIntent(44))
+                .build(),
+        )
+        if (!error) petView?.launchProgress = 1f
+        Handler(Looper.getMainLooper()).postDelayed({ petView?.launchProgress = 0f }, 4_000)
+    }
+
+    @Suppress("unused")
+    private fun showOverlayLegacy() {
         if (petView != null) return
         val density = resources.displayMetrics.density
         val fullWidth = (84 * density).toInt()
@@ -169,7 +433,11 @@ class PetOverlayService : Service() {
     )
 
     override fun onDestroy() {
-        petView?.let { runCatching { windowManager.removeView(it) } }
+        overlayRoot?.let { runCatching { windowManager.removeView(it) } }
+        if (overlayRoot == null) petView?.let { runCatching { windowManager.removeView(it) } }
+        overlayRoot = null
+        overlayLayout = null
+        radialActions.clear()
         petView = null
         scope.cancel()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -182,6 +450,7 @@ class PetOverlayService : Service() {
         const val ACTION_SHOW = "com.phoneagent.app.action.SHOW_PET"
         const val ACTION_HIDE = "com.phoneagent.app.action.HIDE_PET"
         private const val NOTIFICATION_ID = 1101
+        private const val PANEL_TAG = "sai-overlay-panel"
     }
 }
 
@@ -200,6 +469,8 @@ class SailRobotView(
     private val onPositionSaved: () -> Unit,
     private val onMinimize: () -> Unit,
     private val onRestore: () -> Unit,
+    private val radialMenuEnabled: Boolean = false,
+    private val onRadialToggle: () -> Unit = {},
 ) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
@@ -208,6 +479,9 @@ class SailRobotView(
     private var downY = 0f
     private var lastX = 0f
     private var lastY = 0f
+    private var lastTapAt = 0L
+    private val tapHandler = Handler(Looper.getMainLooper())
+    private val singleTap = Runnable(onOpen)
     var theme: String = theme
         set(value) { field = value; invalidate() }
     var minimized: Boolean = false
@@ -424,7 +698,17 @@ class SailRobotView(
                 }
                 onPositionSaved()
                 if (abs(event.rawX - downX) < 12 && abs(event.rawY - downY) < 12) {
-                    if (showCloseControl && event.x > width * .72f && event.y < height * .32f) onMinimize()
+                    if (radialMenuEnabled) {
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (now - lastTapAt <= 360L) {
+                            tapHandler.removeCallbacks(singleTap)
+                            lastTapAt = 0L
+                            onRadialToggle()
+                        } else {
+                            lastTapAt = now
+                            tapHandler.postDelayed(singleTap, 370L)
+                        }
+                    } else if (showCloseControl && event.x > width * .72f && event.y < height * .32f) onMinimize()
                     else if (showVoiceControl && event.x > width * .36f && event.y > height * .32f) onVoice()
                     else onOpen()
                 }
@@ -435,6 +719,7 @@ class SailRobotView(
     }
 
     override fun onDetachedFromWindow() {
+        tapHandler.removeCallbacksAndMessages(null)
         animator.cancel()
         super.onDetachedFromWindow()
     }

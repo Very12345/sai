@@ -9,7 +9,10 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import java.io.File
+import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -55,7 +58,15 @@ internal data class SaiApkAsset(
 internal class AppUpdateManager(
     private val context: Context,
     private val githubTokenProvider: () -> CharArray? = { null },
-    private val client: OkHttpClient = OkHttpClient.Builder().followRedirects(true).build(),
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .callTimeout(0, TimeUnit.MILLISECONDS)
+        .retryOnConnectionFailure(true)
+        .build(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val updateDirectory = File(context.cacheDir, "app-updates")
@@ -121,28 +132,18 @@ internal class AppUpdateManager(
         } ?: error("Release 中没有 $apkName 的 SHA-256")
 
         val partial = File(updateDirectory, "$apkName.part")
+        val etagFile = File(updateDirectory, "$apkName.part.etag")
         val target = File(updateDirectory, apkName)
-        client.newCall(request(apkUrl)).execute().use { response ->
-            check(response.isSuccessful) { "APK 下载失败：HTTP ${response.code}" }
-            val total = response.body.contentLength().coerceAtLeast(0)
-            response.body.byteStream().use { input ->
-                partial.outputStream().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var copied = 0L
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        output.write(buffer, 0, count)
-                        copied += count
-                        onProgress(copied, total)
-                    }
-                }
-            }
-        }
+        downloadResumable(apkUrl, partial, etagFile, onProgress)
         val actual = sha256(partial)
-        check(actual.equals(expected, true)) { "APK SHA-256 校验失败，下载文件已删除" }
+        check(actual.equals(expected, true)) {
+            partial.delete()
+            etagFile.delete()
+            "APK SHA-256 校验失败，下载文件已删除"
+        }
         if (target.exists()) target.delete()
         check(partial.renameTo(target)) { "无法保存已校验的 APK" }
+        etagFile.delete()
         val archiveInfo = archivePackageInfo(target)
         check(archiveInfo.packageName == expectedPackageName) {
             target.delete()
@@ -153,6 +154,65 @@ internal class AppUpdateManager(
             "APK 签名与当前 sai 不一致，已阻止安装"
         }
         target
+    }
+
+    private suspend fun downloadResumable(
+        url: String,
+        partial: File,
+        etagFile: File,
+        onProgress: (downloaded: Long, total: Long) -> Unit,
+    ) {
+        var lastError: Throwable? = null
+        repeat(MAX_DOWNLOAD_ATTEMPTS) { attempt ->
+            val existing = partial.takeIf(File::isFile)?.length() ?: 0L
+            val builder = request(url).newBuilder()
+            if (existing > 0) {
+                builder.header("Range", "bytes=$existing-")
+                etagFile.takeIf(File::isFile)?.readText()?.trim()?.takeIf(String::isNotBlank)?.let {
+                    builder.header("If-Range", it)
+                }
+            }
+            val result = runCatching {
+                client.newCall(builder.build()).execute().use { response ->
+                    if (response.code == 416) {
+                        // The remote may consider the partial file complete. Verification below
+                        // decides whether it can be used; otherwise the next attempt starts clean.
+                        return
+                    }
+                    check(response.isSuccessful) { "APK 下载失败：HTTP ${response.code}" }
+                    val append = existing > 0 && response.code == 206
+                    if (!append && existing > 0) partial.delete()
+                    response.header("ETag")?.takeIf(String::isNotBlank)?.let(etagFile::writeText)
+                    val offset = if (append) existing else 0L
+                    val remaining = response.body.contentLength().coerceAtLeast(0)
+                    val total = when {
+                        response.header("Content-Range")?.substringAfter('/')?.toLongOrNull() != null ->
+                            response.header("Content-Range")!!.substringAfter('/').toLong()
+                        remaining > 0 -> offset + remaining
+                        else -> 0L
+                    }
+                    FileOutputStream(partial, append).use { output ->
+                        response.body.byteStream().use { input ->
+                            val buffer = ByteArray(128 * 1024)
+                            var copied = offset
+                            onProgress(copied, total)
+                            while (true) {
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                output.write(buffer, 0, count)
+                                copied += count
+                                onProgress(copied, total)
+                            }
+                            output.fd.sync()
+                        }
+                    }
+                }
+            }
+            if (result.isSuccess) return
+            lastError = result.exceptionOrNull()
+            if (attempt + 1 < MAX_DOWNLOAD_ATTEMPTS) delay(1_000L shl attempt)
+        }
+        throw IllegalStateException("下载多次中断，可稍后继续：${lastError?.message.orEmpty()}", lastError)
     }
 
     fun launchInstaller(apk: File): Boolean {
@@ -265,6 +325,7 @@ internal class AppUpdateManager(
 
     companion object {
         private const val APK_MIME = "application/vnd.android.package-archive"
+        private const val MAX_DOWNLOAD_ATTEMPTS = 4
 
         internal fun compareSaiVersions(left: String, right: String): Int {
             fun parse(value: String): VersionParts {

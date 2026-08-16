@@ -1,5 +1,5 @@
 use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD}, Engine};
 use futures_util::{SinkExt, StreamExt};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
@@ -10,9 +10,9 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{collections::HashSet, sync::{Arc, Mutex}, time::Duration};
+use std::{collections::HashSet, fs, path::{Component, Path}, sync::{Arc, Mutex}, time::Duration};
 use std::net::IpAddr;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::{net::TcpListener, sync::mpsc, task::AbortHandle, time::timeout};
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
@@ -80,7 +80,7 @@ async fn create_pairing_offer(
         "nonce": URL_SAFE_NO_PAD.encode(offer_nonce),
         "publicKey": URL_SAFE_NO_PAD.encode(public.as_bytes()),
         "pin": URL_SAFE_NO_PAD.encode(cert_pin),
-        "scopes": ["project.read", "project.write", "chat"]
+        "scopes": ["project.read", "project.write", "chat", "harness.sync"]
     }).to_string();
     let code = QrCode::new(payload.as_bytes()).map_err(|e| e.to_string())?;
     let short = u32::from_be_bytes([offer_nonce[0], offer_nonce[1], offer_nonce[2], offer_nonce[3]]) % 1_000_000;
@@ -196,6 +196,39 @@ fn send_remote_command(command: String, payload: Value, state: State<'_, Desktop
     Ok(id)
 }
 
+#[tauri::command]
+fn save_synced_session(
+    app: AppHandle,
+    harness: String,
+    path: String,
+    content: String,
+    sha256: String,
+) -> Result<String, String> {
+    if !matches!(harness.as_str(), "codex" | "claude-code" | "dsh") {
+        return Err("未知 Harness".into());
+    }
+    let relative = Path::new(&path);
+    if relative.as_os_str().is_empty() || relative.is_absolute() ||
+        relative.components().any(|part| !matches!(part, Component::Normal(_))) {
+        return Err("会话同步路径非法".into());
+    }
+    let bytes = STANDARD.decode(content).map_err(|_| "会话内容 Base64 无效".to_string())?;
+    if bytes.len() > 16 * 1024 * 1024 { return Err("会话文件超过 16 MB".into()); }
+    let actual = format!("{:x}", Sha256::digest(&bytes));
+    if actual != sha256 { return Err("会话内容摘要不匹配".into()); }
+    let root = app.path().app_local_data_dir().map_err(|e| e.to_string())?
+        .join("session-sync").join(&harness);
+    let target = root.join(relative);
+    let parent = target.parent().ok_or_else(|| "会话路径缺少父目录".to_string())?;
+    fs::create_dir_all(parent).map_err(|e| format!("无法创建同步目录：{e}"))?;
+    let temporary = parent.join(format!(".{}.sync.tmp", target.file_name().unwrap_or_default().to_string_lossy()));
+    fs::write(&temporary, bytes).map_err(|e| format!("无法写入同步文件：{e}"))?;
+    fs::rename(&temporary, &target).or_else(|_| {
+        fs::copy(&temporary, &target).map(|_| ()).and_then(|_| fs::remove_file(&temporary))
+    }).map_err(|e| format!("无法提交同步文件：{e}"))?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
 fn send_command(state: &State<'_, DesktopState>, value: Value) -> Result<String, String> {
     let id = value.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
     let guard = state.inner.lock().map_err(|_| "桌面连接状态锁损坏".to_string())?;
@@ -266,7 +299,7 @@ fn preferred_lan_ip() -> Result<IpAddr, String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(DesktopState::default())
-        .invoke_handler(tauri::generate_handler![create_pairing_offer, send_chat, send_remote_command])
+        .invoke_handler(tauri::generate_handler![create_pairing_offer, send_chat, send_remote_command, save_synced_session])
         .run(tauri::generate_context!())
         .expect("sai Desktop failed");
 }

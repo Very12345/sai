@@ -1,13 +1,15 @@
 # sai architecture
 
-sai uses the official DeepSeek Harness (DSH) as its only interactive Agent engine. Android owns the
-device lifecycle and security boundary; DSH owns sessions, model execution, tool orchestration,
-append-only events, steering, compaction and the conversation client.
+sai is a multi-Harness mobile workbench. Android owns the device lifecycle and security boundary;
+DeepSeek Harness, official Codex `app-server`, and Claude Code's Agent SDK/CLI each remain the source
+of truth for their own sessions, tools, approvals and history. sai adapts those real clients to a phone
+instead of maintaining imitation agent loops.
 
 | Module | Responsibility |
 | --- | --- |
 | `app` | Compose shell, project/file/terminal/settings screens, foreground services, Room migration, Keystore and Android capability bridge |
-| `core:dsh` | Offline runtime verification/provisioning, authenticated loopback host, DSH RPC client and crash supervision |
+| `core:dsh` | Offline runtime verification/provisioning, authenticated loopback host, DSH RPC client and rollback |
+| `core:harness` | Shared Harness kinds, lifecycle contracts and normalized task state |
 | `core:runtime` | Debian/PRoot boundary, PTY, offline Git/GitHub CLI and optional toolchains |
 | `core:data` | Native settings, market cache, Android-only state and encrypted secret storage |
 | `core:extensions` | Staging, static audit and catalog compatibility for MCP, Skills and plugin packages |
@@ -20,7 +22,9 @@ the DSH session format.
 
 ## Runtime and IPC
 
-The APK carries Node 24.19.0 and `@deepseek-ai/dsh 0.1.0-rc.6` for ARM64/x86_64. The archive is
+The APK carries Node 24.19.0, `@deepseek-ai/dsh 0.1.0-rc.6`, Codex 0.147.0 and Claude Code 2.1.233
+for ARM64/x86_64. Codex is driven by `app-server`; Claude Code uses its version-matched Agent SDK.
+The archive is
 SHA-256 verified, unpacked into app-private storage and retains one previous runtime for rollback.
 The `current`/`previous` swap is atomic and a rollback marker prevents startup from immediately
 overwriting the selected previous closure. “Restore bundled runtime” clears that marker and performs
@@ -38,6 +42,10 @@ remain in Android Keystore; the replacement DSH credential provider resolves a n
 one request and does not write the value to settings, environment snapshots, logs or exports.
 GitHub browser device login runs `gh` against an isolated temporary config directory, copies only the
 resulting credential to Keystore, and deletes the directory before returning control to the UI.
+
+The paired Windows client can copy native DSH, Codex and Claude conversation artifacts over the same
+X25519/HKDF/AES-GCM channel. Paths are confined to the three Harness stores, files are size-bounded,
+and every read/write is SHA-256 checked so a newer phone-side transcript is never silently replaced.
 
 ## Session migration
 

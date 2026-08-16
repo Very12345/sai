@@ -72,7 +72,10 @@ class MainActivity : ComponentActivity() {
                     target.absolutePath
                 }.getOrNull()
             }
-            runOnUiThread { viewModel.attachFiles(copied) }
+            runOnUiThread {
+                if (viewModel.ui.value.section == MainSection.FILES) viewModel.importExternalFiles(copied)
+                else viewModel.attachFiles(copied)
+            }
         }
     }
     private val projectZip = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -221,6 +224,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleLaunchIntent(intent: Intent?) {
+        if (intent?.action == ACTION_EXIT_APPLICATION) {
+            intent.action = null
+            finishAndRemoveTask()
+            return
+        }
         if (intent?.action == ACTION_TOGGLE_VOICE_CALL) {
             intent.action = null
             toggleVoiceCall()
@@ -614,5 +622,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val ACTION_TOGGLE_VOICE_CALL = "com.phoneagent.app.action.TOGGLE_VOICE_CALL"
+        const val ACTION_EXIT_APPLICATION = "com.phoneagent.app.action.EXIT_APPLICATION"
     }
 }

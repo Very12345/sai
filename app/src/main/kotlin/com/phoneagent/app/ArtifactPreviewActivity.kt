@@ -11,6 +11,9 @@ import android.webkit.MimeTypeMap
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.MediaController
+import android.widget.TextView
+import android.widget.VideoView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
@@ -55,6 +58,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import androidx.webkit.WebViewAssetLoader
+import io.github.rosemoe.sora.widget.CodeEditor
+import io.noties.markwon.Markwon
+import io.noties.markwon.ext.latex.JLatexMathPlugin
+import io.noties.markwon.ext.tables.TablePlugin
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -135,7 +142,10 @@ private fun PreviewScreen(
                 file == null -> Text("文件不可用", Modifier.padding(20.dp))
                 mime == "application/pdf" || file.extension.equals("pdf", true) -> PdfPreview(file)
                 mime.startsWith("image/") -> ImagePreview(file)
+                mime.startsWith("video/") -> VideoPreview(file)
                 mime == "text/html" || file.extension.equals("html", true) || file.extension.equals("htm", true) -> SafeWebPreview(file = file)
+                file.extension.equals("md", true) || file.extension.equals("markdown", true) -> MarkdownPreview(file)
+                file.extension.lowercase() in CODE_EXTENSIONS -> CodePreview(file)
                 mime.startsWith("text/") || file.extension.lowercase() in TEXT_EXTENSIONS -> TextPreview(file)
                 else -> Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("此格式仅支持系统应用预览")
@@ -144,6 +154,59 @@ private fun PreviewScreen(
             }
         }
     }
+}
+
+@Composable
+private fun MarkdownPreview(file: File) {
+    var markdown by remember(file) { mutableStateOf("正在读取…") }
+    LaunchedEffect(file) {
+        markdown = withContext(Dispatchers.IO) {
+            file.inputStream().bufferedReader().use { it.readText().take(1_500_000) }
+        }
+    }
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { context -> TextView(context).apply { setPadding(24, 20, 24, 40); textSize = 16f } },
+        update = { textView ->
+            Markwon.builder(textView.context)
+                .usePlugin(TablePlugin.create(textView.context))
+                .usePlugin(JLatexMathPlugin.create(42f) { })
+                .build()
+                .setMarkdown(textView, markdown)
+        },
+    )
+}
+
+@Composable
+private fun CodePreview(file: File) {
+    var code by remember(file) { mutableStateOf("正在读取…") }
+    LaunchedEffect(file) {
+        code = withContext(Dispatchers.IO) {
+            file.inputStream().bufferedReader().use { it.readText().take(2_000_000) }
+        }
+    }
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { context -> CodeEditor(context).apply { isLineNumberEnabled = true; isEditable = false } },
+        update = { editor -> if (editor.text.toString() != code) editor.setText(code) },
+    )
+}
+
+@Composable
+private fun VideoPreview(file: File) {
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { context ->
+            VideoView(context).apply {
+                val controls = MediaController(context)
+                controls.setAnchorView(this)
+                setMediaController(controls)
+                setVideoPath(file.absolutePath)
+                setOnPreparedListener { player -> player.isLooping = false; start() }
+            }
+        },
+        update = { },
+    )
 }
 
 @Composable
@@ -226,4 +289,5 @@ private fun PdfPreview(file: File) {
     DisposableEffect(file) { onDispose { bitmap?.recycle() } }
 }
 
-private val TEXT_EXTENSIONS = setOf("txt", "md", "json", "xml", "yaml", "yml", "toml", "csv", "py", "kt", "java", "js", "ts", "css", "go", "rs", "c", "h", "cpp", "hpp")
+private val TEXT_EXTENSIONS = setOf("txt", "log", "ini", "cfg", "csv")
+private val CODE_EXTENSIONS = setOf("json", "xml", "yaml", "yml", "toml", "py", "kt", "java", "js", "ts", "css", "go", "rs", "c", "h", "cpp", "hpp", "sh", "gradle")

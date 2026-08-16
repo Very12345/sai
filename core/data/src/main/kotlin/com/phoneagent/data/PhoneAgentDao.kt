@@ -176,6 +176,9 @@ interface PhoneAgentDao {
     @Query("UPDATE extensions SET enabled = :enabled WHERE id = :extensionId")
     suspend fun setExtensionEnabled(extensionId: String, enabled: Boolean)
 
+    @Query("SELECT * FROM extensions WHERE (workspaceId IS NULL OR workspaceId = :workspaceId) AND (harnessKind IS NULL OR harnessKind = :harnessKind) ORDER BY kind, name")
+    fun observeExtensionsFor(workspaceId: String, harnessKind: String): Flow<List<ExtensionEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertCheckpoint(checkpoint: TaskCheckpointEntity)
 
@@ -226,4 +229,73 @@ interface PhoneAgentDao {
 
     @Query("SELECT * FROM runtime_packages ORDER BY id")
     fun observeRuntimePackages(): Flow<List<RuntimePackageEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertHarnessRuntime(runtime: HarnessRuntimeEntity)
+
+    @Query("SELECT * FROM harness_runtimes ORDER BY harnessKind")
+    fun observeHarnessRuntimes(): Flow<List<HarnessRuntimeEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertHarnessBinding(binding: HarnessSessionBindingEntity)
+
+    @Query("SELECT * FROM harness_session_bindings WHERE sessionId = :sessionId LIMIT 1")
+    suspend fun harnessBinding(sessionId: String): HarnessSessionBindingEntity?
+
+    @Query("SELECT * FROM harness_session_bindings WHERE workspaceId = :workspaceId ORDER BY updatedAt DESC")
+    fun observeHarnessBindings(workspaceId: String): Flow<List<HarnessSessionBindingEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertHarnessDefault(config: HarnessDefaultConfigEntity)
+
+    @Query("SELECT * FROM harness_default_configs WHERE harnessKind = :harnessKind AND (workspaceId = :workspaceId OR workspaceId IS NULL) ORDER BY workspaceId IS NULL LIMIT 1")
+    suspend fun harnessDefault(workspaceId: String?, harnessKind: String): HarnessDefaultConfigEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertTrashEntry(entry: TrashEntryEntity)
+
+    @Query("SELECT * FROM trash_entries WHERE workspaceId = :workspaceId ORDER BY deletedAt DESC")
+    fun observeTrash(workspaceId: String): Flow<List<TrashEntryEntity>>
+
+    @Query("SELECT * FROM trash_entries WHERE id = :id LIMIT 1")
+    suspend fun trashEntry(id: String): TrashEntryEntity?
+
+    @Query("SELECT * FROM trash_entries WHERE workspaceId = :workspaceId AND trashPath = :trashPath LIMIT 1")
+    suspend fun trashEntryByPath(workspaceId: String, trashPath: String): TrashEntryEntity?
+
+    @Query("DELETE FROM trash_entries WHERE id = :id")
+    suspend fun deleteTrashEntry(id: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertTerminalTab(tab: TerminalTabEntity)
+
+    @Query("SELECT * FROM terminal_tabs WHERE workspaceId = :workspaceId ORDER BY sortIndex, createdAt")
+    fun observeTerminalTabs(workspaceId: String): Flow<List<TerminalTabEntity>>
+
+    @Query("SELECT * FROM terminal_tabs WHERE workspaceId = :workspaceId ORDER BY sortIndex, createdAt")
+    suspend fun terminalTabs(workspaceId: String): List<TerminalTabEntity>
+
+    @Query("DELETE FROM terminal_tabs WHERE id = :tabId")
+    suspend fun deleteTerminalTab(tabId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertManagerTaskLink(link: ManagerTaskLinkEntity)
+
+    @Query("SELECT * FROM manager_task_links WHERE managerSessionId = :managerSessionId ORDER BY updatedAt DESC")
+    fun observeManagerTaskLinks(managerSessionId: String): Flow<List<ManagerTaskLinkEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertManagerTrigger(trigger: ManagerTriggerEntity)
+
+    @Query("SELECT * FROM manager_triggers ORDER BY enabled DESC, nextRunAt")
+    fun observeManagerTriggers(): Flow<List<ManagerTriggerEntity>>
+
+    @Query("UPDATE manager_triggers SET pausedByExit = 1, enabled = 0, updatedAt = :updatedAt WHERE enabled = 1")
+    suspend fun pauseTriggersForExit(updatedAt: Long = System.currentTimeMillis())
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertPetOverlayState(state: PetOverlayStateEntity)
+
+    @Query("SELECT * FROM pet_overlay_state WHERE id = 'default' LIMIT 1")
+    fun observePetOverlayState(): Flow<PetOverlayStateEntity?>
 }
