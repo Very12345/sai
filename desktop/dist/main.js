@@ -13,6 +13,7 @@ const editor = $("#editor");
 const fileName = $("#fileName");
 const save = $("#save");
 const sync = $("#sync");
+const dshRoot = $("#dshRoot");
 
 let connected = false;
 let activeProject = null;
@@ -36,8 +37,10 @@ pair.addEventListener("click", async () => {
 sync.addEventListener("click", async () => {
   if (!connected) return;
   sync.disabled = true;
-  status.textContent = "正在读取 Codex、Claude Code 与 DSH 会话清单…";
+  status.textContent = "正在比较手机与电脑的 Codex、Claude Code、DSH 会话…";
   try {
+    const local = await invoke("local_harness_manifest", { dshRoot: dshRoot.value.trim() || null });
+    window.__saiLocalHarnessFiles = local.files || [];
     await invoke("send_remote_command", { command: "harness.sync.manifest", payload: {} });
   } catch (error) {
     sync.disabled = false;
@@ -94,7 +97,16 @@ listen("phoneagent-event", ({ payload }) => {
 });
 
 function handleResponse(message) {
-  if (!message.ok) { status.textContent = message.error || "手机端请求失败"; return; }
+  if (!message.ok) {
+    status.textContent = message.error || "手机端请求失败";
+    if (["harness.sync.read", "harness.sync.write"].includes(message.command) && window.__saiSyncPending > 0) {
+      window.__saiSyncPending -= 1;
+      finishHarnessSync();
+    } else if (message.command === "harness.sync.manifest") {
+      sync.disabled = false;
+    }
+    return;
+  }
   const result = message.result || {};
   switch (message.command) {
     case "state.list": renderState(result); break;
@@ -108,43 +120,82 @@ function handleResponse(message) {
     case "chat.send":
       activeSession = result.sessionId || activeSession; status.textContent = "Agent 任务已在手机启动"; break;
     case "harness.sync.manifest": {
-      const entries = result.files || [];
-      if (!entries.length) {
+      const remoteEntries = result.files || [];
+      const localEntries = window.__saiLocalHarnessFiles || [];
+      const keyOf = (entry) => `${entry.harness}\u0000${entry.path}`;
+      const remoteByKey = new Map(remoteEntries.map((entry) => [keyOf(entry), entry]));
+      const localByKey = new Map(localEntries.map((entry) => [keyOf(entry), entry]));
+      const phoneOnly = remoteEntries.filter((entry) => !localByKey.has(keyOf(entry)));
+      const desktopOnly = localEntries.filter((entry) => !remoteByKey.has(keyOf(entry)));
+      const conflicts = remoteEntries.filter((entry) => {
+        const local = localByKey.get(keyOf(entry));
+        return local && local.sha256 !== entry.sha256;
+      });
+      const unchanged = remoteEntries.length - phoneOnly.length - conflicts.length;
+      window.__saiSyncPending = phoneOnly.length + desktopOnly.length;
+      window.__saiSyncTotal = window.__saiSyncPending;
+      window.__saiSyncSaved = 0;
+      window.__saiSyncConflicts = conflicts.length;
+      if (!window.__saiSyncPending) {
         sync.disabled = false;
-        status.textContent = "手机上还没有可同步的 Harness 对话";
+        status.textContent = conflicts.length
+          ? `已有 ${unchanged} 个一致文件；发现 ${conflicts.length} 个冲突，未自动覆盖`
+          : `手机与电脑已一致（${unchanged} 个会话文件）`;
         break;
       }
-      window.__saiSyncPending = entries.length;
-      window.__saiSyncTotal = entries.length;
-      window.__saiSyncSaved = 0;
-      status.textContent = `正在同步 0 / ${entries.length} 个会话文件…`;
-      for (const entry of entries) {
+      status.textContent = `正在双向同步 0 / ${window.__saiSyncTotal} 个文件…`;
+      for (const entry of phoneOnly) {
         invoke("send_remote_command", { command: "harness.sync.read", payload: {
           harness: entry.harness, path: entry.path
         }}).catch((error) => {
           window.__saiSyncPending -= 1;
           status.textContent = `部分会话读取失败：${error}`;
+          finishHarnessSync();
+        });
+      }
+      for (const entry of desktopOnly) {
+        invoke("read_local_harness_session", {
+          harness: entry.harness, path: entry.path, dshRoot: dshRoot.value.trim() || null
+        }).then((local) => invoke("send_remote_command", {
+          command: "harness.sync.write", payload: {
+            harness: local.harness, path: local.path, content: local.content, expectedSha256: ""
+          }
+        })).catch((error) => {
+          window.__saiSyncPending -= 1;
+          status.textContent = `电脑端会话上传失败：${error}`;
+          finishHarnessSync();
         });
       }
       break;
     }
     case "harness.sync.read":
       invoke("save_synced_session", {
-        harness: result.harness, path: result.path, content: result.content, sha256: result.sha256
+        harness: result.harness, path: result.path, content: result.content, sha256: result.sha256,
+        dshRoot: dshRoot.value.trim() || null
       }).then(() => {
         window.__saiSyncSaved += 1;
       }).catch((error) => {
         status.textContent = `会话落盘失败：${error}`;
       }).finally(() => {
         window.__saiSyncPending -= 1;
-        if (window.__saiSyncPending <= 0) {
-          sync.disabled = false;
-          status.textContent = `已同步 ${window.__saiSyncSaved} 个 Harness 会话文件到电脑`;
-        } else {
-          status.textContent = `正在同步 ${window.__saiSyncSaved} / ${window.__saiSyncTotal} 个会话文件…`;
-        }
+        finishHarnessSync();
       });
       break;
+    case "harness.sync.write":
+      window.__saiSyncSaved += 1;
+      window.__saiSyncPending -= 1;
+      finishHarnessSync();
+      break;
+  }
+}
+
+function finishHarnessSync() {
+  if (window.__saiSyncPending <= 0) {
+    sync.disabled = false;
+    const conflicts = window.__saiSyncConflicts || 0;
+    status.textContent = `已双向同步 ${window.__saiSyncSaved} 个会话文件${conflicts ? `；${conflicts} 个冲突未覆盖` : ""}`;
+  } else {
+    status.textContent = `正在双向同步 ${window.__saiSyncSaved} / ${window.__saiSyncTotal} 个文件…`;
   }
 }
 

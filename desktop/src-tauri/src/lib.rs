@@ -10,7 +10,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{collections::HashSet, fs, path::{Component, Path}, sync::{Arc, Mutex}, time::Duration};
+use std::{collections::HashSet, fs, path::{Component, Path, PathBuf}, sync::{Arc, Mutex}, time::Duration};
 use std::net::IpAddr;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::{net::TcpListener, sync::mpsc, task::AbortHandle, time::timeout};
@@ -203,6 +203,7 @@ fn save_synced_session(
     path: String,
     content: String,
     sha256: String,
+    dsh_root: Option<String>,
 ) -> Result<String, String> {
     if !matches!(harness.as_str(), "codex" | "claude-code" | "dsh") {
         return Err("未知 Harness".into());
@@ -216,17 +217,111 @@ fn save_synced_session(
     if bytes.len() > 16 * 1024 * 1024 { return Err("会话文件超过 16 MB".into()); }
     let actual = format!("{:x}", Sha256::digest(&bytes));
     if actual != sha256 { return Err("会话内容摘要不匹配".into()); }
-    let root = app.path().app_local_data_dir().map_err(|e| e.to_string())?
-        .join("session-sync").join(&harness);
+    let root = desktop_harness_roots(&app, dsh_root.as_deref())?
+        .remove(&harness).ok_or_else(|| "未知 Harness".to_string())?;
     let target = root.join(relative);
     let parent = target.parent().ok_or_else(|| "会话路径缺少父目录".to_string())?;
     fs::create_dir_all(parent).map_err(|e| format!("无法创建同步目录：{e}"))?;
     let temporary = parent.join(format!(".{}.sync.tmp", target.file_name().unwrap_or_default().to_string_lossy()));
+    if target.is_file() {
+        let existing = fs::read(&target).map_err(|e| format!("无法读取电脑端会话：{e}"))?;
+        let existing_sha = format!("{:x}", Sha256::digest(&existing));
+        if existing_sha == sha256 { return Ok(target.to_string_lossy().into_owned()); }
+        return Err(format!("同步冲突，电脑端会话已变化：{}", target.display()));
+    }
     fs::write(&temporary, bytes).map_err(|e| format!("无法写入同步文件：{e}"))?;
     fs::rename(&temporary, &target).or_else(|_| {
         fs::copy(&temporary, &target).map(|_| ()).and_then(|_| fs::remove_file(&temporary))
     }).map_err(|e| format!("无法提交同步文件：{e}"))?;
     Ok(target.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn local_harness_manifest(app: AppHandle, dsh_root: Option<String>) -> Result<Value, String> {
+    let mut files = Vec::new();
+    for (harness, root) in desktop_harness_roots(&app, dsh_root.as_deref())? {
+        collect_session_files(&root, &root, &harness, &mut files)?;
+    }
+    Ok(json!({"version": 1, "files": files}))
+}
+
+#[tauri::command]
+fn read_local_harness_session(
+    app: AppHandle,
+    harness: String,
+    path: String,
+    dsh_root: Option<String>,
+) -> Result<Value, String> {
+    let roots = desktop_harness_roots(&app, dsh_root.as_deref())?;
+    let root = roots.get(&harness).ok_or_else(|| "未知 Harness".to_string())?;
+    let relative = checked_relative(&path)?;
+    let target = root.join(relative);
+    let metadata = fs::symlink_metadata(&target).map_err(|_| "电脑端会话文件不存在".to_string())?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() || metadata.len() > 16 * 1024 * 1024 {
+        return Err("电脑端会话文件非法或超过 16 MB".into());
+    }
+    let bytes = fs::read(&target).map_err(|e| format!("无法读取电脑端会话：{e}"))?;
+    Ok(json!({
+        "harness": harness,
+        "path": path,
+        "sha256": format!("{:x}", Sha256::digest(&bytes)),
+        "content": STANDARD.encode(bytes),
+    }))
+}
+
+fn desktop_harness_roots(app: &AppHandle, dsh_root: Option<&str>) -> Result<std::collections::HashMap<String, PathBuf>, String> {
+    let home = app.path().home_dir().map_err(|e| format!("无法定位用户主目录：{e}"))?;
+    let fallback_dsh = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("session-sync/dsh");
+    let dsh = match dsh_root.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => {
+            let path = PathBuf::from(value);
+            if !path.is_absolute() { return Err("DSH 会话目录必须是绝对路径".into()); }
+            path
+        }
+        None => fallback_dsh,
+    };
+    Ok(std::collections::HashMap::from([
+        ("codex".to_string(), home.join(".codex/sessions")),
+        ("claude-code".to_string(), home.join(".claude/projects")),
+        ("dsh".to_string(), dsh),
+    ]))
+}
+
+fn checked_relative(path: &str) -> Result<&Path, String> {
+    let relative = Path::new(path);
+    if relative.as_os_str().is_empty() || relative.is_absolute() ||
+        relative.components().any(|part| !matches!(part, Component::Normal(_))) {
+        return Err("会话同步路径非法".into());
+    }
+    Ok(relative)
+}
+
+fn collect_session_files(root: &Path, directory: &Path, harness: &str, output: &mut Vec<Value>) -> Result<(), String> {
+    if output.len() >= 5_000 || !directory.exists() { return Ok(()); }
+    let metadata = fs::symlink_metadata(directory).map_err(|e| e.to_string())?;
+    if metadata.file_type().is_symlink() { return Ok(()); }
+    for entry in fs::read_dir(directory).map_err(|e| format!("无法读取会话目录：{e}"))? {
+        if output.len() >= 5_000 { break; }
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+        if metadata.file_type().is_symlink() { continue; }
+        if metadata.is_dir() {
+            collect_session_files(root, &path, harness, output)?;
+        } else if metadata.is_file() && metadata.len() <= 16 * 1024 * 1024 {
+            let relative = path.strip_prefix(root).map_err(|_| "会话路径逃逸".to_string())?
+                .to_string_lossy().replace('\\', "/");
+            let bytes = fs::read(&path).map_err(|e| format!("无法读取会话文件：{e}"))?;
+            output.push(json!({
+                "harness": harness,
+                "path": relative,
+                "size": metadata.len(),
+                "modifiedAt": metadata.modified().ok().and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).map(|value| value.as_millis() as u64).unwrap_or(0),
+                "sha256": format!("{:x}", Sha256::digest(&bytes)),
+            }));
+        }
+    }
+    Ok(())
 }
 
 fn send_command(state: &State<'_, DesktopState>, value: Value) -> Result<String, String> {
@@ -299,7 +394,14 @@ fn preferred_lan_ip() -> Result<IpAddr, String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(DesktopState::default())
-        .invoke_handler(tauri::generate_handler![create_pairing_offer, send_chat, send_remote_command, save_synced_session])
+        .invoke_handler(tauri::generate_handler![
+            create_pairing_offer,
+            send_chat,
+            send_remote_command,
+            save_synced_session,
+            local_harness_manifest,
+            read_local_harness_session,
+        ])
         .run(tauri::generate_context!())
         .expect("sai Desktop failed");
 }

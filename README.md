@@ -50,8 +50,9 @@ model API credentials.
   JavaScript interface exposed to web pages.
 - A Tauri 2 Windows companion with QR pairing, a pinned-certificate TLS
   WebSocket, X25519/HKDF/AES-GCM application encryption, project/session lists,
-  conflict-safe text editing, basic Agent conversations, and source-format DSH/Codex/Claude session
-  synchronization with SHA-256 conflict checks. Desktop requests
+  conflict-safe text editing, basic Agent conversations, and bidirectional source-format DSH/Codex/Claude session
+  synchronization with SHA-256 conflict checks. Codex and Claude sync into their native desktop session roots;
+  DSH accepts an explicit desktop session directory. Conflicts are reported rather than overwritten. Desktop requests
   cannot approve dangerous actions on behalf of the phone.
 - ABI-matched PRoot/loader libraries for ARM64 and x86_64, a native `forkpty`
   bridge, and an interactive terminal surface.

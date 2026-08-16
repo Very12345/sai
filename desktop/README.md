@@ -22,6 +22,14 @@ key or provider credential is sent to the computer. Pairing must currently be
 repeated after the desktop app exits; automatic mDNS reconnection and persistent
 Windows Credential Manager identities remain a follow-up hardening milestone.
 
+## Harness conversation sync
+
+After pairing, **双向同步 Harness 对话** compares source-format session files by
+SHA-256. Codex uses `%USERPROFILE%\.codex\sessions`, Claude Code uses
+`%USERPROFILE%\.claude\projects`, and DSH can use the absolute directory entered
+above the sync button. Files present on only one device are copied to the other;
+same-path differences are reported as conflicts and never silently overwritten.
+
 ## Build paths
 
 Run `..\scripts\desktop-env.ps1` first. Rust, Cargo, pnpm and build output are
