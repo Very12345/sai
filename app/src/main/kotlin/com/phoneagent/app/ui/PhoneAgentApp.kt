@@ -4584,7 +4584,21 @@ private fun SettingsScreen(
                             onClick = viewModel::loginGitHubWithDevice,
                             enabled = !state.githubCliBusy,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text(if (state.githubCliBusy) "等待 GitHub 授权…" else "浏览器网页登录（推荐）") }
+                        ) {
+                            Text(
+                                when {
+                                    !state.githubCliBusy -> "浏览器网页登录（推荐）"
+                                    state.githubDeviceCode == null -> "正在申请设备码…"
+                                    else -> "等待 GitHub 授权…"
+                                },
+                            )
+                        }
+                        if (state.githubCliBusy) {
+                            OutlinedButton(
+                                onClick = viewModel::cancelGitHubLogin,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("取消登录") }
+                        }
                         state.githubDeviceCode?.let { code ->
                             Text("设备码：$code", style = MaterialTheme.typography.titleMedium)
                             Text("浏览器已打开 GitHub 授权页。输入上方设备码并确认后，sai 会自动完成登录。", style = MaterialTheme.typography.bodySmall)

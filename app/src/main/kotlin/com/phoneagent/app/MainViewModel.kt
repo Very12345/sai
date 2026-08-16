@@ -217,6 +217,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val terminalWriteMutex = Mutex()
     private var runtimePackageJob: kotlinx.coroutines.Job? = null
     private var selectedSessionEventsJob: Job? = null
+    private var githubLoginJob: Job? = null
     private val eventJson = Json { ignoreUnknownKeys = true; classDiscriminator = "eventType" }
     private val extensionCatalog = ExtensionCatalogClient(
         githubTokenProvider = { container.secretStore.get("github:github.com:token") },
@@ -1377,16 +1378,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loginGitHubWithDevice() {
         if (_ui.value.githubCliBusy) return
-        viewModelScope.launch(Dispatchers.IO) {
+        githubLoginJob = viewModelScope.launch(Dispatchers.IO) {
             _ui.update { it.copy(githubCliBusy = true, githubDeviceCode = null, message = "正在准备 gh 并申请 GitHub 设备码…") }
             container.githubCli.loginWithDeviceFlow { code ->
                 _ui.update { it.copy(githubDeviceCode = code, message = "请在 GitHub 验证页输入设备码 $code") }
             }.onSuccess { status ->
                 _ui.update { it.copy(githubCliBusy = false, githubDeviceCode = null, githubCliStatus = status, message = "GitHub 登录成功") }
             }.onFailure { error ->
-                _ui.update { it.copy(githubCliBusy = false, githubDeviceCode = null, message = error.message ?: "GitHub 设备登录失败") }
+                if (error is kotlinx.coroutines.CancellationException) {
+                    _ui.update { it.copy(githubCliBusy = false, githubDeviceCode = null, message = "已取消 GitHub 登录") }
+                } else {
+                    _ui.update { it.copy(githubCliBusy = false, githubDeviceCode = null, message = error.message ?: "GitHub 设备登录失败") }
+                }
             }
         }
+    }
+
+    fun cancelGitHubLogin() {
+        githubLoginJob?.cancel()
+        githubLoginJob = null
+        _ui.update { it.copy(githubCliBusy = false, githubDeviceCode = null, message = "已取消 GitHub 登录") }
     }
 
     fun logoutGitHub() {

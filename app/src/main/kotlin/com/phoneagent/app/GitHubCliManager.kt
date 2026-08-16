@@ -56,15 +56,7 @@ class GitHubCliManager(
         installer.install().getOrElse { return@withLock Result.failure(it) }
         val observedCode = AtomicReference<String?>(null)
         val loginOutput = StringBuilder()
-        val command = """
-            gh_config=${'$'}(mktemp -d)
-            trap 'rm -rf "${'$'}gh_config"' EXIT
-            export GH_CONFIG_DIR="${'$'}gh_config"
-            export BROWSER=echo
-            gh auth login --hostname github.com --git-protocol https --web --skip-ssh-key
-            printf '\nSAI_GH_TOKEN='
-            gh auth token --hostname github.com
-        """.trimIndent()
+        val command = githubDeviceLoginCommand()
         runCatching {
             val result = runtime.runStreaming(
                 RunRequest(
@@ -149,3 +141,14 @@ class GitHubCliManager(
         private val TOKEN_RESULT = Regex("SAI_GH_TOKEN=([^\\s]+)")
     }
 }
+
+internal fun githubDeviceLoginCommand(): String =
+    """
+        gh_config=${'$'}(mktemp -d)
+        trap 'rm -rf "${'$'}gh_config"' EXIT
+        export GH_CONFIG_DIR="${'$'}gh_config"
+        export BROWSER=echo
+        printf 'Y\n' | gh auth login --hostname github.com --git-protocol https --web --skip-ssh-key --insecure-storage
+        printf '\nSAI_GH_TOKEN='
+        gh auth token --hostname github.com
+    """.trimIndent()
