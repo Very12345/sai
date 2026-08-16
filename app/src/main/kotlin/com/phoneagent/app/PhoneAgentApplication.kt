@@ -75,17 +75,26 @@ class PhoneAgentApplication : Application() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(
+            getSystemService(NotificationManager::class.java).apply {
+                createNotificationChannel(NotificationChannel(
                     AGENT_CHANNEL_ID,
                     "sai Agent 任务",
                     NotificationManager.IMPORTANCE_LOW,
-                ).apply { description = "sai 本地长任务的可见运行状态" },
-            )
+                ).apply { description = "sai 本地长任务的可见运行状态" })
+                createNotificationChannel(NotificationChannel(
+                    GITHUB_AUTH_CHANNEL_ID,
+                    "GitHub 登录验证码",
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
+                    description = "在浏览器授权时显示 GitHub 设备验证码"
+                    enableVibration(true)
+                })
+            }
         }
     }
 
     companion object {
         const val AGENT_CHANNEL_ID = "phoneagent-agent-runs"
+        const val GITHUB_AUTH_CHANNEL_ID = "sai-github-device-auth-v1"
     }
 }

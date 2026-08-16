@@ -218,6 +218,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var runtimePackageJob: kotlinx.coroutines.Job? = null
     private var selectedSessionEventsJob: Job? = null
     private var githubLoginJob: Job? = null
+    private val githubAuthNotifier = GitHubDeviceAuthNotifier(application)
     private val eventJson = Json { ignoreUnknownKeys = true; classDiscriminator = "eventType" }
     private val extensionCatalog = ExtensionCatalogClient(
         githubTokenProvider = { container.secretStore.get("github:github.com:token") },
@@ -1382,9 +1383,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _ui.update { it.copy(githubCliBusy = true, githubDeviceCode = null, message = "正在准备 gh 并申请 GitHub 设备码…") }
             container.githubCli.loginWithDeviceFlow { code ->
                 _ui.update { it.copy(githubDeviceCode = code, message = "请在 GitHub 验证页输入设备码 $code") }
+                githubAuthNotifier.show(code)
             }.onSuccess { status ->
+                githubAuthNotifier.cancel()
                 _ui.update { it.copy(githubCliBusy = false, githubDeviceCode = null, githubCliStatus = status, message = "GitHub 登录成功") }
             }.onFailure { error ->
+                githubAuthNotifier.cancel()
                 if (error is kotlinx.coroutines.CancellationException) {
                     _ui.update { it.copy(githubCliBusy = false, githubDeviceCode = null, message = "已取消 GitHub 登录") }
                 } else {
@@ -1397,6 +1401,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun cancelGitHubLogin() {
         githubLoginJob?.cancel()
         githubLoginJob = null
+        githubAuthNotifier.cancel()
         _ui.update { it.copy(githubCliBusy = false, githubDeviceCode = null, message = "已取消 GitHub 登录") }
     }
 
@@ -2158,6 +2163,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        githubLoginJob?.cancel()
+        githubAuthNotifier.cancel()
         terminalSessions.values.forEach(PtySession::close)
         terminalSessions.clear()
         terminalReaders.values.forEach { it.cancel() }
