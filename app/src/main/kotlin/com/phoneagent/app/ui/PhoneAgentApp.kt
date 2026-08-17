@@ -1347,6 +1347,8 @@ private fun DshAgentScreen(
                                           style.id = 'sai-android-dialog-fix';
                                           style.textContent = `@media (max-width: 600px) {
                                             html, body, #root { height: var(--sai-android-viewport-height) !important; min-height: var(--sai-android-viewport-height) !important; }
+                                            [class$='_headline'] { align-items: center !important; }
+                                            [class$='_headlineText'] { font-size: 24px !important; line-height: 30px !important; white-space: nowrap !important; }
                                             [role='dialog'] { width: calc(100vw - 24px) !important; height: auto !important; max-height: none !important; overflow: auto !important; border-radius: 18px !important; }
                                             [role='dialog'] > div { max-height: none !important; min-height: min-content !important; overflow: visible !important; }
                                           }`;
