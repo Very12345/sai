@@ -938,19 +938,21 @@ private const val CODEX_ANDROID_VIEWPORT_FIX = """
       .thread-composer-control .composer-dropdown-trigger{min-width:0!important;max-width:29vw!important;padding-left:5px!important;padding-right:5px!important}
       .thread-composer-actions{gap:3px!important}
       .thread-composer-mic,.thread-composer-submit,.thread-composer-stop,.thread-composer-attach-trigger{width:34px!important;height:34px!important}
-      .composer-dropdown-menu,.thread-composer-attach-menu{position:fixed!important;left:8px!important;right:8px!important;bottom:8px!important;width:auto!important;max-width:none!important;max-height:min(62vh,430px)!important;overflow:auto!important}
+      .composer-dropdown-menu,.thread-composer-attach-menu{position:fixed!important;left:8px!important;right:8px!important;bottom:8px!important;width:auto!important;max-width:none!important;max-height:var(--sai-vv-menu-height,430px)!important;overflow:auto!important}
       .new-thread-open-folder-overlay,.codex-login-modal-backdrop,.project-zip-modal-backdrop,.rename-thread-overlay,.directory-modal-overlay,.sdm-overlay,.image-modal-backdrop,.diff-viewer-backdrop{top:var(--sai-vv-top,0px)!important;bottom:auto!important;height:var(--sai-vv-height,100vh)!important;max-height:var(--sai-vv-height,100vh)!important;padding:8px!important;box-sizing:border-box!important;overflow:auto!important;align-items:center!important}
       .new-thread-project-modal,.new-thread-open-folder,.codex-login-modal,.project-zip-modal,[role=dialog]{max-height:calc(var(--sai-vv-height,100vh) - 16px)!important;box-sizing:border-box!important;overflow:auto!important}
       [role=dialog],[role=menu],[role=listbox]{max-width:calc(100vw - 16px)!important;box-sizing:border-box!important}
-      [role=menu],[role=listbox]{max-height:min(62vh,430px)!important;overflow:auto!important}
+      [role=menu],[role=listbox]{max-height:var(--sai-vv-menu-height,430px)!important;overflow:auto!important}
       .mobile-drawer{width:min(88vw,340px)!important;max-width:88vw!important}
     }
   `;
   const syncViewport = () => {
     const viewport = window.visualViewport;
     const root = document.documentElement;
-    root.style.setProperty('--sai-vv-height', (viewport ? viewport.height : window.innerHeight) + 'px');
+    const height = Math.max(280, viewport ? viewport.height : window.innerHeight);
+    root.style.setProperty('--sai-vv-height', height + 'px');
     root.style.setProperty('--sai-vv-top', (viewport ? viewport.offsetTop : 0) + 'px');
+    root.style.setProperty('--sai-vv-menu-height', Math.min(430, Math.round(height * 0.62)) + 'px');
   };
   syncViewport();
   window.visualViewport?.addEventListener('resize', syncViewport);
@@ -990,7 +992,7 @@ private const val CLAUDE_ANDROID_VIEWPORT_FIX = """
       #root form+button{padding:3px 6px!important;text-align:left!important}
       #root form+button span{display:none!important}
       #root [role=dialog]{width:calc(100vw - 16px)!important;max-width:none!important;max-height:calc(var(--sai-vv-height,100vh) - 24px)!important;margin:8px!important;overflow:auto!important}
-      #root [role=menu],#root [role=listbox]{max-width:calc(100vw - 16px)!important;max-height:min(62vh,430px)!important;box-sizing:border-box!important;overflow:auto!important}
+      #root [role=menu],#root [role=listbox]{max-width:calc(100vw - 16px)!important;max-height:var(--sai-vv-menu-height,430px)!important;box-sizing:border-box!important;overflow:auto!important}
       #root [class*="fixed"][class*="inset-0"]{top:var(--sai-vv-top,0px)!important;bottom:auto!important;height:var(--sai-vv-height,100vh)!important;padding:8px!important;align-items:flex-start!important;overflow:hidden!important}
       #root [class*="fixed"][class*="inset-0"]>div{width:100%!important;max-width:none!important;height:calc(var(--sai-vv-height,100vh) - 16px)!important;max-height:calc(var(--sai-vv-height,100vh) - 16px)!important;display:flex!important;flex-direction:column!important;overflow:auto!important}
       #root [class*="fixed"][class*="inset-0"]>div>[class*="overflow-y-auto"]{flex:1 1 auto!important;min-height:0!important;max-height:none!important;overflow-y:auto!important}
@@ -999,8 +1001,10 @@ private const val CLAUDE_ANDROID_VIEWPORT_FIX = """
   const syncViewport = () => {
     const viewport = window.visualViewport;
     const root = document.documentElement;
-    root.style.setProperty('--sai-vv-height', (viewport ? viewport.height : window.innerHeight) + 'px');
+    const height = Math.max(280, viewport ? viewport.height : window.innerHeight);
+    root.style.setProperty('--sai-vv-height', height + 'px');
     root.style.setProperty('--sai-vv-top', (viewport ? viewport.offsetTop : 0) + 'px');
+    root.style.setProperty('--sai-vv-menu-height', Math.min(430, Math.round(height * 0.62)) + 'px');
   };
   syncViewport();
   window.visualViewport?.addEventListener('resize', syncViewport);
@@ -1354,7 +1358,7 @@ private fun DshAgentScreen(
                                             [class$='_headlineText'] { font-size: 24px !important; line-height: 30px !important; white-space: nowrap !important; }
                                             [role='dialog'] { width: min(520px, calc(100vw - 16px)) !important; max-width: calc(100vw - 16px) !important; height: auto !important; max-height: calc(var(--sai-android-viewport-height) - 16px) !important; box-sizing: border-box !important; overflow: auto !important; border-radius: 18px !important; }
                                             [role='dialog'] > div { min-width: 0 !important; max-width: 100% !important; max-height: 100% !important; box-sizing: border-box !important; }
-                                            [role='menu'], [role='listbox'] { max-width: calc(100vw - 16px) !important; max-height: min(62vh, 430px) !important; box-sizing: border-box !important; overflow: auto !important; }
+                                            [role='menu'], [role='listbox'] { max-width: calc(100vw - 16px) !important; max-height: var(--sai-android-menu-height, 430px) !important; box-sizing: border-box !important; overflow: auto !important; }
 
                                             /* DSH's question and plan-review surfaces replace the composer. The
                                                conversation seat is shrinkable by design, so on a long mobile
@@ -1397,6 +1401,7 @@ private fun DshAgentScreen(
                                             const contentLeft = scrollport ? Math.max(0, Math.round(scrollport.getBoundingClientRect().left)) : 56;
                                             const questionHeight = Math.min(520, Math.max(220, Math.round(height * 0.72)));
                                             root.style.setProperty('--sai-android-viewport-height', height + 'px');
+                                            root.style.setProperty('--sai-android-menu-height', Math.min(430, Math.round(height * 0.62)) + 'px');
                                             root.style.setProperty('--sai-dsh-content-left', contentLeft + 'px');
                                             root.style.setProperty('--sai-dsh-question-height', questionHeight + 'px');
                                           };
