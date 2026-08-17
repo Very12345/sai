@@ -1,0 +1,58 @@
+diff --git a/src/server/accountRoutes.ts b/src/server/accountRoutes.ts
+index 08264bb..bfd6d54 100644
+--- a/src/server/accountRoutes.ts
++++ b/src/server/accountRoutes.ts
+@@ -1234,6 +1234,53 @@ export async function handleAccountRoutes(
+     return true
+   }
+ 
++  // Mobile clients cannot reliably receive a localhost OAuth callback after
++  // the user finishes authorization in another device's browser. Codex
++  // app-server provides a first-party device-code flow specifically for this
++  // case, so expose only the normalized URL/code/login id to the trusted local
++  // sai WebView host.
++  if (req.method === 'POST' && url.pathname === '/codex-api/accounts/login/device/start') {
++    try {
++      const payload = asRecord(await appServer.rpc('account/login/start', {
++        type: 'chatgptDeviceCode',
++      }))
++      const loginId = readString(payload?.loginId)
++      const verificationUrl = readString(payload?.verificationUrl) ?? readString(payload?.authUrl)
++      const userCode = readString(payload?.userCode)
++      if (!loginId || !verificationUrl || !userCode) {
++        throw new Error('Codex app-server returned an incomplete device login response.')
++      }
++      setJson(res, 200, { ok: true, data: { loginId, verificationUrl, userCode } })
++    } catch (error) {
++      setJson(res, 500, {
++        error: 'account_device_login_start_failed',
++        message: getErrorMessage(error, 'Failed to start Codex device login'),
++      })
++    }
++    return true
++  }
++
++  if (req.method === 'GET' && url.pathname === '/codex-api/accounts/login/device/status') {
++    try {
++      const payload = asRecord(await appServer.rpc('account/read', { refreshToken: false }))
++      const account = asRecord(payload?.account)
++      setJson(res, 200, {
++        ok: true,
++        data: {
++          authenticated: account !== null,
++          email: readString(account?.email),
++          planType: readString(account?.planType),
++        },
++      })
++    } catch (error) {
++      setJson(res, 200, {
++        ok: true,
++        data: { authenticated: false, message: getErrorMessage(error, 'Waiting for authorization') },
++      })
++    }
++    return true
++  }
++
+   if (req.method === 'POST' && url.pathname === '/codex-api/accounts/login/complete') {
+     try {
+       const payload = await readJsonBody(req)

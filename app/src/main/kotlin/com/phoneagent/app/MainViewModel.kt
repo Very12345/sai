@@ -98,6 +98,8 @@ import kotlinx.serialization.json.buildJsonArray
 
 enum class MainSection { AGENT, FILES, TERMINAL, BROWSER, EXTENSIONS, SETTINGS }
 
+enum class AgentPane { DSH, CODEX, CLAUDE_CODE, FILES, TERMINAL }
+
 enum class VoiceCallPhase { IDLE, LISTENING, THINKING, SPEAKING, ERROR }
 
 enum class VoiceInputGesture { TAP, HOLD }
@@ -105,6 +107,19 @@ enum class VoiceInputGesture { TAP, HOLD }
 enum class SessionPermissionMode { ASK, AUTO, YOLO }
 
 data class FileItem(val path: String, val directory: Boolean, val size: Long)
+
+/**
+ * Returns a stable path relative to [root], even when Android exposes the same
+ * app-private directory through both /data/user/0 and /data/data aliases.
+ */
+internal fun relativeFilePath(root: File, child: File): String? {
+    val canonicalRoot = runCatching { root.canonicalFile }.getOrNull() ?: return null
+    val canonicalChild = runCatching { child.canonicalFile }.getOrNull() ?: return null
+    if (canonicalChild != canonicalRoot &&
+        !canonicalChild.path.startsWith(canonicalRoot.path + File.separator)
+    ) return null
+    return canonicalChild.relativeTo(canonicalRoot).invariantSeparatorsPath
+}
 
 data class FileLocation(
     val id: String,
@@ -116,6 +131,7 @@ data class RuntimePackageRequest(val group: RuntimePackageGroup, val action: Run
 data class MainUiState(
     val section: MainSection = MainSection.AGENT,
     val activeHarnessKind: HarnessKind = HarnessKind.DSH,
+    val activeAgentPane: AgentPane = AgentPane.DSH,
     val events: List<AgentEvent> = emptyList(),
     val workspaces: List<WorkspaceEntity> = emptyList(),
     val sessions: List<SessionEntity> = emptyList(),
@@ -175,6 +191,9 @@ data class MainUiState(
     val githubTokenInput: String = "",
     val githubCliBusy: Boolean = false,
     val githubDeviceCode: String? = null,
+    val codexAccountStatus: CodexAccountStatus = CodexAccountStatus(),
+    val codexLoginBusy: Boolean = false,
+    val codexDeviceLogin: CodexDeviceLogin? = null,
     val appUpdate: AppUpdateState = AppUpdateState(),
     val provider: ProviderProfile = ProviderPresets.all.first(),
     val providerProfiles: List<ProviderProfile> = emptyList(),
@@ -236,6 +255,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         activeHarnessKind = runCatching {
             HarnessKind.valueOf(uiPreferences.getString("active_harness_kind", HarnessKind.DSH.name).orEmpty())
         }.getOrDefault(HarnessKind.DSH),
+        activeAgentPane = runCatching {
+            AgentPane.valueOf(uiPreferences.getString("active_agent_pane", AgentPane.DSH.name).orEmpty())
+        }.getOrDefault(AgentPane.DSH),
         provider = ModelReasoningPolicy.normalize(container.providerSettings.profile.value),
         providerProfiles = container.providerSettings.profiles.value,
         rootfsInstallState = initialRootfsState(),
@@ -258,7 +280,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val terminalWriteMutex = Mutex()
     private var runtimePackageJob: kotlinx.coroutines.Job? = null
     private var selectedSessionEventsJob: Job? = null
+    private var codexLoginJob: Job? = null
     private var githubLoginJob: Job? = null
+    private var fileListJob: Job? = null
+    private var fileStorageJob: Job? = null
     private var bundledHarnessRecordsSynced = false
     private val observedVoicePackWorks = mutableSetOf<UUID>()
     private val githubAuthNotifier = GitHubDeviceAuthNotifier(application)
@@ -470,9 +495,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectSection(section: MainSection) {
-        _ui.update { it.copy(section = section) }
-        if (section == MainSection.FILES) refreshFiles()
-        if (section == MainSection.TERMINAL && _ui.value.runtimeCapability?.available == true) openTerminal()
+        when (section) {
+            MainSection.FILES -> selectAgentPane(AgentPane.FILES)
+            MainSection.TERMINAL -> selectAgentPane(AgentPane.TERMINAL)
+            else -> _ui.update { it.copy(section = section) }
+        }
     }
 
     fun openSettings(route: String) {
@@ -483,9 +510,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectHarness(kind: HarnessKind) {
         uiPreferences.edit().putString("active_harness_kind", kind.name).apply()
-        _ui.update { it.copy(activeHarnessKind = kind) }
+        val pane = when (kind) {
+            HarnessKind.DSH -> AgentPane.DSH
+            HarnessKind.CODEX -> AgentPane.CODEX
+            HarnessKind.CLAUDE_CODE -> AgentPane.CLAUDE_CODE
+            HarnessKind.MANAGER -> AgentPane.DSH
+        }
+        uiPreferences.edit().putString("active_agent_pane", pane.name).apply()
+        _ui.update { it.copy(section = MainSection.AGENT, activeHarnessKind = kind, activeAgentPane = pane) }
         if (kind in setOf(HarnessKind.CODEX, HarnessKind.CLAUDE_CODE)) {
             container.harnessWebRuntime.ensureStarted(kind)
+        }
+    }
+
+    fun selectAgentPane(pane: AgentPane) {
+        uiPreferences.edit().putString("active_agent_pane", pane.name).apply()
+        _ui.update { it.copy(section = MainSection.AGENT, activeAgentPane = pane) }
+        when (pane) {
+            AgentPane.DSH -> selectHarness(HarnessKind.DSH)
+            AgentPane.CODEX -> selectHarness(HarnessKind.CODEX)
+            AgentPane.CLAUDE_CODE -> selectHarness(HarnessKind.CLAUDE_CODE)
+            AgentPane.FILES -> refreshFiles()
+            AgentPane.TERMINAL -> if (_ui.value.runtimeCapability?.available == true && !_ui.value.terminalConnected) openTerminal()
         }
     }
 
@@ -615,7 +661,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val workspace = selectedWorkspace()
         _ui.update {
             it.copy(
-                section = MainSection.FILES,
+                section = MainSection.AGENT,
+                activeAgentPane = AgentPane.FILES,
                 fileRootId = "workspace:${workspace?.id ?: DEFAULT_WORKSPACE_ID}",
                 fileRootTitle = workspace?.name ?: "默认项目",
                 currentDirectory = "",
@@ -623,6 +670,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 editorDirty = false,
             )
         }
+        uiPreferences.edit().putString("active_agent_pane", AgentPane.FILES.name).apply()
         refreshFiles()
     }
     fun setPrompt(prompt: String) = _ui.update { it.copy(prompt = prompt) }
@@ -1162,8 +1210,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshFiles() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val root = activeFileRoot()
+        fileListJob?.cancel()
+        val requestedRootId = _ui.value.fileRootId
+        val requestedDirectory = _ui.value.currentDirectory
+        fileListJob = viewModelScope.launch(Dispatchers.IO) {
+            // Use one canonical path basis throughout. safeFile() canonicalizes
+            // directories, while filesDir may use Android's /data/user/0 alias;
+            // mixing those forms produces bogus ../../../../data/... paths.
+            val root = activeFileRoot(requestedRootId).canonicalFile
             val state = _ui.value
             val directory = if (state.currentDirectory.isBlank()) root else safeFile(state.currentDirectory)
             val search = state.fileSearch.trim()
@@ -1171,12 +1225,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val items = sequence
                 .filter { state.showHiddenFiles || !it.name.startsWith('.') }
                 .filter { search.isEmpty() || it.name.contains(search, ignoreCase = true) }
-                .take(2_000).map {
-                FileItem(it.relativeTo(root).invariantSeparatorsPath, it.isDirectory, it.length())
-            }.sortedWith(compareByDescending<FileItem> { it.directory }.thenBy { it.path.lowercase() }).toList()
-            val projectBytes = root.walkTopDown().filter(File::isFile).sumOf(File::length)
+                .take(2_000).mapNotNull { file ->
+                    relativeFilePath(root, file)?.let { relative ->
+                        FileItem(relative, file.isDirectory, file.length())
+                    }
+                }.sortedWith(compareByDescending<FileItem> { it.directory }.thenBy { it.path.lowercase() }).toList()
             val available = runCatching { StatFs(root.absolutePath).availableBytes }.getOrDefault(0)
-            _ui.update { it.copy(files = items, storageProjectBytes = projectBytes, storageAvailableBytes = available) }
+            _ui.update {
+                if (it.fileRootId == requestedRootId && it.currentDirectory == requestedDirectory) {
+                    it.copy(files = items, storageAvailableBytes = available)
+                } else it
+            }
+        }
+    }
+
+    /** Refreshes navigation immediately and computes the expensive recursive size later. */
+    fun refreshFilesAndStorage() {
+        refreshFiles()
+        fileStorageJob?.cancel()
+        val requestedRootId = _ui.value.fileRootId
+        fileStorageJob = viewModelScope.launch(Dispatchers.IO) {
+            // Let the lightweight directory request win disk scheduling first.
+            delay(750)
+            val root = activeFileRoot(requestedRootId).canonicalFile
+            var bytes = 0L
+            var visited = 0
+            root.walkTopDown().forEach { file ->
+                if (file.isFile) bytes += file.length()
+                if (++visited % 256 == 0) kotlinx.coroutines.yield()
+            }
+            val available = runCatching { StatFs(root.absolutePath).availableBytes }.getOrDefault(0)
+            _ui.update {
+                if (it.fileRootId == requestedRootId) {
+                    it.copy(storageProjectBytes = bytes, storageAvailableBytes = available)
+                } else it
+            }
         }
     }
 
@@ -1198,9 +1281,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 selectedFile = null,
                 editorText = "",
                 editorDirty = false,
+                storageProjectBytes = 0,
             )
         }
-        refreshFiles()
+        refreshFilesAndStorage()
     }
 
     fun openDirectory(path: String) {
@@ -1251,7 +1335,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 editorText = text,
                 editorDirty = false,
                 editorReadOnly = readOnly,
-                section = MainSection.FILES,
+                section = MainSection.AGENT,
+                activeAgentPane = AgentPane.FILES,
             ) }
         }
     }
@@ -2021,6 +2106,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshCodexAccount() {
+        if (_ui.value.codexLoginBusy) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _ui.update { it.copy(codexLoginBusy = true) }
+            runCatching { container.codexAccounts.status() }
+                .onSuccess { status -> _ui.update { it.copy(codexLoginBusy = false, codexAccountStatus = status) } }
+                .onFailure { error -> _ui.update { it.copy(codexLoginBusy = false, message = error.message ?: "无法读取 Codex 账户") } }
+        }
+    }
+
+    fun loginCodexWithDevice() {
+        if (_ui.value.codexLoginBusy) return
+        codexLoginJob = viewModelScope.launch(Dispatchers.IO) {
+            _ui.update { it.copy(codexLoginBusy = true, codexDeviceLogin = null, message = "正在启动 Codex 设备登录…") }
+            runCatching {
+                val login = container.codexAccounts.startDeviceLogin()
+                _ui.update { it.copy(codexDeviceLogin = login, message = "请在浏览器输入 Codex 验证码 ${login.userCode}") }
+                container.codexAccounts.waitForAuthorization()
+            }.onSuccess { status ->
+                _ui.update {
+                    it.copy(
+                        codexLoginBusy = false,
+                        codexDeviceLogin = null,
+                        codexAccountStatus = status,
+                        message = "Codex 账户登录成功",
+                    )
+                }
+                runCatching { container.harnessWebRuntime.restart(HarnessKind.CODEX) }
+            }.onFailure { error ->
+                if (error is kotlinx.coroutines.CancellationException) {
+                    _ui.update { it.copy(codexLoginBusy = false, codexDeviceLogin = null, message = "已取消 Codex 登录等待") }
+                } else {
+                    _ui.update { it.copy(codexLoginBusy = false, codexDeviceLogin = null, message = error.message ?: "Codex 登录失败") }
+                }
+            }
+        }
+    }
+
+    fun cancelCodexLogin() {
+        codexLoginJob?.cancel()
+        codexLoginJob = null
+        _ui.update { it.copy(codexLoginBusy = false, codexDeviceLogin = null, message = "已取消 Codex 登录等待") }
+    }
+
     fun refreshRuntimePackages() {
         if (_ui.value.runtimePackageOperation != null) return
         viewModelScope.launch {
@@ -2657,9 +2786,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return file
     }
 
-    private fun activeFileRoot(): File {
+    private fun activeFileRoot(id: String = _ui.value.fileRootId): File {
         val app = getApplication<Application>()
-        val id = _ui.value.fileRootId
         val root = when {
             id == "sai" -> app.filesDir
             id == "dsh" -> File(app.filesDir, "dsh")
@@ -2800,6 +2928,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        codexLoginJob?.cancel()
         githubLoginJob?.cancel()
         githubAuthNotifier.cancel()
         terminalSessions.values.forEach(PtySession::close)

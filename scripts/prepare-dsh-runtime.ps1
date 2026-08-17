@@ -2,7 +2,7 @@ param(
     [string]$CacheRoot = 'D:\Code\sai-dsh-runtime',
     [string]$NodeVersion = '24.19.0',
     [string]$DshVersion = '0.1.0-rc.6',
-    [int]$RuntimeRevision = 58,
+    [int]$RuntimeRevision = 59,
     [string]$DshForkRoot = 'D:\Code\deepseek-harness',
     [string]$CodexGuiRoot = 'D:\Code\sai-gui-research\codex-mobile',
     [string]$ClaudeGuiRoot = 'D:\Code\sai-gui-research\claude-code-webui',
@@ -19,6 +19,24 @@ New-Item -ItemType Directory -Force -Path $CacheRoot, $assetRoot | Out-Null
 function Invoke-Checked([string]$FilePath, [string[]]$Arguments, [string]$WorkingDirectory) {
     $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -NoNewWindow -Wait -PassThru
     if ($process.ExitCode -ne 0) { throw "$FilePath exited with $($process.ExitCode)" }
+}
+
+function Ensure-SaiCodexMobilePatch([string]$CodexRoot) {
+    $routeSource = Join-Path $CodexRoot 'src\server\accountRoutes.ts'
+    $patchFile = Join-Path $repoRoot 'runtime-patches\codex-mobile-device-login.patch'
+    if (-not (Test-Path -LiteralPath $routeSource) -or -not (Test-Path -LiteralPath $patchFile)) {
+        throw 'Missing Codex mobile source or sai patch file'
+    }
+    $patched = Select-String -LiteralPath $routeSource -SimpleMatch '/codex-api/accounts/login/device/start' -Quiet
+    if (-not $patched) {
+        Invoke-Checked 'git.exe' @('apply', '--whitespace=nowarn', $patchFile) $CodexRoot
+    }
+    $cliOutput = Join-Path $CodexRoot 'dist-cli\index.js'
+    $requiresBuild = -not (Test-Path -LiteralPath $cliOutput) -or
+        (Get-Item -LiteralPath $routeSource).LastWriteTimeUtc -gt (Get-Item -LiteralPath $cliOutput).LastWriteTimeUtc
+    if ($requiresBuild) {
+        Invoke-Checked 'pnpm.cmd' @('run', 'build') $CodexRoot
+    }
 }
 
 function Get-File([string]$Url, [string]$Destination) {
@@ -96,6 +114,8 @@ function Install-SaiHarnessGuis([string]$AppRoot, [string]$CodexRoot, [string]$C
     Copy-Item -LiteralPath (Join-Path $CodexRoot 'LICENSE') -Destination (Join-Path $codexTarget 'LICENSE') -Force
     Copy-Item -LiteralPath (Join-Path $ClaudeRoot 'LICENSE') -Destination (Join-Path $guiRoot 'claude\LICENSE') -Force
 }
+
+Ensure-SaiCodexMobilePatch $CodexGuiRoot
 
 $closures = @{}
 $lockHashes = @{}

@@ -193,13 +193,18 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import android.annotation.SuppressLint
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.net.Uri
 import android.provider.Settings
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import android.webkit.WebChromeClient
+import android.webkit.PermissionRequest
 import android.webkit.ConsoleMessage
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebView
@@ -269,13 +274,12 @@ import io.noties.markwon.ext.tasklist.TaskListPlugin
 import io.noties.markwon.html.HtmlPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import com.phoneagent.harness.HarnessKind
+import com.phoneagent.app.AgentPane
 
 private data class Destination(val section: MainSection, val label: String, val icon: ImageVector)
 
 private val destinations = listOf(
     Destination(MainSection.AGENT, "Agent", Icons.Default.Home),
-    Destination(MainSection.FILES, "文件", Icons.Default.Folder),
-    Destination(MainSection.TERMINAL, "终端", Icons.Default.Terminal),
     Destination(MainSection.EXTENSIONS, "扩展", Icons.Default.Build),
     Destination(MainSection.SETTINGS, "设置", Icons.Default.Settings),
 )
@@ -310,6 +314,7 @@ fun PhoneAgentApp(
     var exitDialogVisible by remember { mutableStateOf(false) }
     BackHandler {
         if (state.section != MainSection.AGENT) viewModel.selectSection(MainSection.AGENT)
+        else if (state.activeAgentPane != AgentPane.DSH) viewModel.selectAgentPane(AgentPane.DSH)
         else exitDialogVisible = true
     }
     Box(Modifier.fillMaxSize()) {
@@ -362,6 +367,7 @@ fun PhoneAgentApp(
         if (
             state.section == MainSection.AGENT &&
             state.taskPetVisible &&
+            state.activeAgentPane == AgentPane.DSH &&
             !(state.section == MainSection.AGENT && dshOverlayVisible)
         ) {
             SaiPetDock(
@@ -381,7 +387,9 @@ fun PhoneAgentApp(
                         Toast.makeText(context, "授予悬浮窗权限后，再拖出或点击悬浮按钮", Toast.LENGTH_LONG).show()
                     }
                 },
-                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 4.dp, end = 8.dp),
+                // Keep the pet below the five-pane workbench switcher so it
+                // never covers Files/Terminal or intercepts their taps.
+                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 48.dp, end = 8.dp),
             )
         }
     }
@@ -705,39 +713,53 @@ private fun HarnessWorkbenchScreen(
 ) {
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            listOf(
-                HarnessKind.DSH to "DSH",
-                HarnessKind.CODEX to "Codex",
-                HarnessKind.CLAUDE_CODE to "Claude Code",
-            ).forEach { (kind, label) ->
-                FilterChip(
-                    selected = state.activeHarnessKind == kind,
-                    onClick = { viewModel.selectHarness(kind) },
-                    label = { Text(label, maxLines = 1) },
-                    leadingIcon = {
-                        Icon(
-                            when (kind) {
-                                HarnessKind.DSH -> Icons.Default.Hub
-                                HarnessKind.CODEX -> Icons.Default.Code
-                                HarnessKind.CLAUDE_CODE -> Icons.Default.Psychology
-                                HarnessKind.MANAGER -> Icons.Default.SmartToy
-                            },
-                            contentDescription = null,
-                            modifier = Modifier.size(17.dp),
-                        )
-                    },
-                )
-            }
-            IconButton(onClick = viewModel::openSelectedProjectFiles) {
-                Icon(Icons.Default.FolderOpen, contentDescription = "项目文件")
+            Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                listOf(
+                    AgentPane.DSH to "DSH",
+                    AgentPane.CODEX to "Codex",
+                    AgentPane.CLAUDE_CODE to "Claude",
+                    AgentPane.FILES to "文件",
+                    AgentPane.TERMINAL to "终端",
+                ).forEach { (pane, label) ->
+                    val selected = state.activeAgentPane == pane
+                    Surface(
+                        onClick = { viewModel.selectAgentPane(pane) },
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                    ) {
+                        Row(
+                            Modifier.height(32.dp).padding(horizontal = if (selected) 8.dp else 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Icon(
+                                when (pane) {
+                                    AgentPane.DSH -> Icons.Default.Hub
+                                    AgentPane.CODEX -> Icons.Default.Code
+                                    AgentPane.CLAUDE_CODE -> Icons.Default.Psychology
+                                    AgentPane.FILES -> Icons.Default.Folder
+                                    AgentPane.TERMINAL -> Icons.Default.Terminal
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            if (selected) {
+                                Text(label, maxLines = 1, style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                }
             }
         }
-        when (state.activeHarnessKind) {
-            HarnessKind.DSH -> DshAgentScreen(
+        when (state.activeAgentPane) {
+            AgentPane.DSH -> DshAgentScreen(
                 state = state,
                 viewModel = viewModel,
                 menuToggleNonce = 0,
@@ -747,22 +769,33 @@ private fun HarnessWorkbenchScreen(
                 requestPhoneFiles = requestPhoneFiles,
                 modifier = Modifier.weight(1f),
             )
-            HarnessKind.CODEX -> HarnessWebScreen(
-                kind = HarnessKind.CODEX,
+            AgentPane.CODEX -> Box(Modifier.weight(1f)) {
+                HarnessWebScreen(
+                    kind = HarnessKind.CODEX,
+                    state = state,
+                    viewModel = viewModel,
+                )
+            }
+            AgentPane.CLAUDE_CODE -> Box(Modifier.weight(1f)) {
+                HarnessWebScreen(
+                    kind = HarnessKind.CLAUDE_CODE,
+                    state = state,
+                    viewModel = viewModel,
+                )
+            }
+            AgentPane.FILES -> WorkbenchWebScreen(
+                mode = WorkbenchWebMode.FILES,
                 state = state,
                 viewModel = viewModel,
+                requestPhoneFiles = requestPhoneFiles,
+                modifier = Modifier.weight(1f),
             )
-            HarnessKind.CLAUDE_CODE -> HarnessWebScreen(
-                kind = HarnessKind.CLAUDE_CODE,
+            AgentPane.TERMINAL -> WorkbenchWebScreen(
+                mode = WorkbenchWebMode.TERMINAL,
                 state = state,
                 viewModel = viewModel,
-            )
-            HarnessKind.MANAGER -> OptionalHarnessLanding(
-                title = "sai 应用总管",
-                detail = "语音和悬浮文字使用独立总管，将任务委派给已安装的 Harness。",
-                command = "内置",
-                state = state,
-                viewModel = viewModel,
+                requestPhoneFiles = requestPhoneFiles,
+                modifier = Modifier.weight(1f),
             )
         }
     }
@@ -779,6 +812,15 @@ private fun HarnessWebScreen(
     val context = LocalContext.current
     val expectedPort = if (kind == HarnessKind.CODEX) 3090 else 3091
     val title = if (kind == HarnessKind.CODEX) "Codex" else "Claude Code"
+    var pendingWebPermission by remember(kind) { mutableStateOf<PermissionRequest?>(null) }
+    val microphonePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        pendingWebPermission?.let { request ->
+            if (granted) request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) else request.deny()
+        }
+        pendingWebPermission = null
+    }
     if (!runtime.ready || runtime.url == null) {
         Column(
             Modifier.fillMaxSize().padding(24.dp),
@@ -814,6 +856,28 @@ private fun HarnessWebScreen(
                     settings.setSupportMultipleWindows(false)
                     settings.javaScriptCanOpenWindowsAutomatically = false
                     settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onPermissionRequest(request: PermissionRequest) {
+                            post {
+                                val origin = request.origin
+                                val trustedOrigin = origin.scheme == "http" && origin.host == "127.0.0.1" && origin.port == expectedPort
+                                val wantsAudio = PermissionRequest.RESOURCE_AUDIO_CAPTURE in request.resources
+                                if (!trustedOrigin || !wantsAudio) {
+                                    request.deny()
+                                } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                    request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                                } else {
+                                    pendingWebPermission?.deny()
+                                    pendingWebPermission = request
+                                    microphonePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            }
+                        }
+
+                        override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                            if (pendingWebPermission === request) pendingWebPermission = null
+                        }
+                    }
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                             val uri = request.url
@@ -826,19 +890,20 @@ private fun HarnessWebScreen(
 
                         override fun onPageFinished(view: WebView, url: String) {
                             super.onPageFinished(view, url)
-                            if (kind == HarnessKind.CODEX) {
-                                // Android System WebView can resolve 100dvh to
-                                // zero when the WebView is hosted in a measured
-                                // Compose AndroidView. Pin Codex's root grid to
-                                // the actual visual viewport instead.
-                                view.evaluateJavascript(CODEX_ANDROID_VIEWPORT_FIX, null)
-                            }
+                            view.evaluateJavascript(
+                                if (kind == HarnessKind.CODEX) CODEX_ANDROID_VIEWPORT_FIX else CLAUDE_ANDROID_VIEWPORT_FIX,
+                                null,
+                            )
                         }
                     }
                     loadUrl(trustedUrl)
                 }
             },
             update = { webView -> if (webView.url == null) webView.loadUrl(trustedUrl) },
+            onRelease = { webView ->
+                webView.stopLoading()
+                webView.destroy()
+            },
         )
     }
 }
@@ -852,9 +917,91 @@ private const val CODEX_ANDROID_VIEWPORT_FIX = """
     style.id = id;
     document.head.appendChild(style);
   }
-  style.textContent = 'html,body,#app{width:100%;height:100%;min-height:100%;margin:0}' +
-    '.desktop-layout{position:fixed!important;inset:0!important;width:auto!important;' +
-    'height:auto!important;min-height:0!important}';
+  style.textContent = `
+    html,body,#app{width:100%;height:100%;min-height:100%;margin:0;overflow:hidden}
+    .desktop-layout{position:fixed!important;inset:0!important;width:auto!important;height:auto!important;min-height:0!important}
+    @media(max-width:700px){
+      .desktop-main,.content-root,.content-body,.content-grid{min-width:0!important;width:100%!important}
+      .content-body{padding:0!important;overflow-x:hidden!important}
+      .content-grid-home{padding:8px!important;align-items:stretch!important}
+      .new-thread-empty{width:100%!important;max-width:none!important;padding:8px!important;gap:8px!important;justify-content:flex-start!important}
+      .new-thread-hero{max-width:100%!important;margin:2px 0 4px!important;font-size:clamp(1.08rem,5.1vw,1.28rem)!important;line-height:1.42!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+      .new-thread-hero h1,.new-thread-hero [class*=title]{max-width:100%!important;margin:0!important;font-size:inherit!important;line-height:inherit!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+      .new-thread-folder-actions{gap:5px!important;flex-wrap:wrap!important}
+      .new-thread-folder-action{min-height:34px!important;padding:6px 9px!important;font-size:12px!important}
+      .new-thread-launch-card{display:none!important}
+      .thread-composer{width:100%!important;max-width:100%!important;padding:0!important}
+      .thread-composer-shell{padding:7px!important;border-radius:15px!important}
+      .thread-composer-input{font-size:16px!important;min-height:38px!important;padding-top:6px!important;padding-bottom:6px!important}
+      .thread-composer-controls{margin-top:4px!important;gap:3px!important;min-width:0!important}
+      .thread-composer-control{min-width:0!important;max-width:29vw!important}
+      .thread-composer-control .composer-dropdown-trigger{min-width:0!important;max-width:29vw!important;padding-left:5px!important;padding-right:5px!important}
+      .thread-composer-actions{gap:3px!important}
+      .thread-composer-mic,.thread-composer-submit,.thread-composer-stop,.thread-composer-attach-trigger{width:34px!important;height:34px!important}
+      .composer-dropdown-menu,.thread-composer-attach-menu{position:fixed!important;left:8px!important;right:8px!important;bottom:8px!important;width:auto!important;max-width:none!important;max-height:min(62vh,430px)!important;overflow:auto!important}
+      .new-thread-open-folder-overlay,.codex-login-modal-backdrop,.project-zip-modal-backdrop,.rename-thread-overlay,.directory-modal-overlay,.sdm-overlay,.image-modal-backdrop,.diff-viewer-backdrop{top:var(--sai-vv-top,0px)!important;bottom:auto!important;height:var(--sai-vv-height,100vh)!important;max-height:var(--sai-vv-height,100vh)!important;padding:8px!important;box-sizing:border-box!important;overflow:auto!important;align-items:center!important}
+      .new-thread-project-modal,.new-thread-open-folder,.codex-login-modal,.project-zip-modal,[role=dialog]{max-height:calc(var(--sai-vv-height,100vh) - 16px)!important;box-sizing:border-box!important;overflow:auto!important}
+      .mobile-drawer{width:min(88vw,340px)!important;max-width:88vw!important}
+    }
+  `;
+  const syncViewport = () => {
+    const viewport = window.visualViewport;
+    const root = document.documentElement;
+    root.style.setProperty('--sai-vv-height', (viewport ? viewport.height : window.innerHeight) + 'px');
+    root.style.setProperty('--sai-vv-top', (viewport ? viewport.offsetTop : 0) + 'px');
+  };
+  syncViewport();
+  window.visualViewport?.addEventListener('resize', syncViewport);
+  window.visualViewport?.addEventListener('scroll', syncViewport);
+})();
+"""
+
+private const val CLAUDE_ANDROID_VIEWPORT_FIX = """
+(() => {
+  const id = 'sai-android-claude-mobile';
+  let style = document.getElementById(id);
+  if (!style) {
+    style = document.createElement('style');
+    style.id = id;
+    document.head.appendChild(style);
+  }
+  style.textContent = `
+    html{width:100%;height:100vh!important;min-height:100vh!important;margin:0;overflow:hidden}
+    body,#root{position:fixed!important;left:0!important;top:var(--sai-vv-top,0px)!important;width:100%!important;height:var(--sai-vv-height,100vh)!important;min-height:0!important;margin:0;overflow:hidden}
+    #root>div{width:100%!important;height:100%!important;min-height:0!important;overflow:hidden!important}
+    #root .h-screen{height:100%!important;min-height:0!important}
+    @media(max-width:700px){
+      #root .max-w-4xl,#root .max-w-6xl{max-width:none!important;width:100%!important;padding:8px!important}
+      #root .max-w-4xl>div:first-child,#root .max-w-6xl>div:first-child{margin-bottom:10px!important;gap:6px!important}
+      #root h1{font-size:1.2rem!important;line-height:1.45rem!important;min-width:0!important}
+      #root h2{font-size:.9rem!important;margin-bottom:7px!important}
+      #root button{min-width:0!important}
+      #root .gap-4{gap:6px!important}
+      #root .gap-3{gap:5px!important}
+      #root .p-6{padding:8px!important}
+      #root .p-4{padding:10px!important}
+      #root .mb-8{margin-bottom:10px!important}
+      #root .text-3xl{font-size:1.2rem!important;line-height:1.45rem!important}
+      #root .text-lg{font-size:.9rem!important;line-height:1.2rem!important}
+      #root .font-mono{font-size:12px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+      #root textarea{font-size:16px!important;min-height:44px!important;padding:9px 76px 9px 10px!important}
+      #root form+button{padding:3px 6px!important;text-align:left!important}
+      #root form+button span{display:none!important}
+      #root [role=dialog]{width:calc(100vw - 16px)!important;max-width:none!important;max-height:calc(var(--sai-vv-height,100vh) - 24px)!important;margin:8px!important;overflow:auto!important}
+      #root [class*="fixed"][class*="inset-0"]{top:var(--sai-vv-top,0px)!important;bottom:auto!important;height:var(--sai-vv-height,100vh)!important;padding:8px!important;align-items:flex-start!important;overflow:hidden!important}
+      #root [class*="fixed"][class*="inset-0"]>div{width:100%!important;max-width:none!important;height:calc(var(--sai-vv-height,100vh) - 16px)!important;max-height:calc(var(--sai-vv-height,100vh) - 16px)!important;display:flex!important;flex-direction:column!important;overflow:auto!important}
+      #root [class*="fixed"][class*="inset-0"]>div>[class*="overflow-y-auto"]{flex:1 1 auto!important;min-height:0!important;max-height:none!important;overflow-y:auto!important}
+    }
+  `;
+  const syncViewport = () => {
+    const viewport = window.visualViewport;
+    const root = document.documentElement;
+    root.style.setProperty('--sai-vv-height', (viewport ? viewport.height : window.innerHeight) + 'px');
+    root.style.setProperty('--sai-vv-top', (viewport ? viewport.offsetTop : 0) + 'px');
+  };
+  syncViewport();
+  window.visualViewport?.addEventListener('resize', syncViewport);
+  window.visualViewport?.addEventListener('scroll', syncViewport);
 })();
 """
 
@@ -4450,7 +4597,7 @@ private fun SettingsHub(
         SettingsCategoryEntry("models", "模型与推理", "提供商、API Key、模型、识图和思考强度", Icons.Default.Hub),
         SettingsCategoryEntry("runtime", "运行环境", "Harness、Debian、Git、Python 与可选工具链", Icons.Default.Terminal),
         SettingsCategoryEntry("files", "文件与电脑连接", "外部文件授权、桌面配对和诊断", Icons.Default.Folder),
-        SettingsCategoryEntry("accounts", "账户", "GitHub 登录与请求限额", Icons.Default.AccountCircle),
+        SettingsCategoryEntry("accounts", "账户", "Codex 与 GitHub 设备登录、请求限额", Icons.Default.AccountCircle),
         SettingsCategoryEntry("about", "关于与更新", "GitHub Release 自动检查、安全下载与安装", Icons.Default.CloudDownload),
     )
     val details = listOf(
@@ -4467,6 +4614,7 @@ private fun SettingsHub(
         SettingsDetailEntry("files/access", "files", "文件访问", "外部目录权限和项目导出", Icons.Default.Folder),
         SettingsDetailEntry("files/desktop", "files", "电脑连接", "局域网扫码配对", Icons.Default.Devices),
         SettingsDetailEntry("files/diagnostics", "files", "诊断与验收", "Agent 全链路测试", Icons.Default.CheckCircle),
+        SettingsDetailEntry("accounts/codex", "accounts", "Codex 账户", "ChatGPT 设备登录或统一模型提供商", Icons.Default.Code),
         SettingsDetailEntry("accounts/github", "accounts", "GitHub", "gh 登录、状态与限额", Icons.Default.AccountCircle),
         SettingsDetailEntry("about/update", "about", "应用更新", "检查、下载、校验并安装 GitHub Release", Icons.Default.CloudDownload),
     )
@@ -4869,7 +5017,12 @@ private fun SettingsScreen(
                     OutlinedTextField(
                         value = state.providerApiKey,
                         onValueChange = viewModel::updateApiKey,
-                        label = { CompactFieldLabel("API Key（留空则使用已保存密钥）") },
+                        label = {
+                            CompactFieldLabel(
+                                if (state.provider.anonymousApiKey != null) "API Key（可选；免费额度无需填写）"
+                                else "API Key（留空则使用已保存密钥）",
+                            )
+                        },
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -5068,6 +5221,73 @@ private fun SettingsScreen(
             }
         }
         }
+        if (section == "accounts/codex") {
+        item {
+            LaunchedEffect(state.codexDeviceLogin?.verificationUrl) {
+                state.codexDeviceLogin?.verificationUrl?.let { url ->
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                }
+            }
+        }
+        item {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Code, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Codex 账户与模型", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (state.codexAccountStatus.authenticated) {
+                                    listOfNotNull(state.codexAccountStatus.email, state.codexAccountStatus.planType).joinToString(" · ").ifBlank { "ChatGPT 已登录" }
+                                } else "未登录 · 也可使用统一 API 提供商",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        IconButton(onClick = viewModel::refreshCodexAccount, enabled = !state.codexLoginBusy) {
+                            if (state.codexLoginBusy && state.codexDeviceLogin == null) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Default.Refresh, "刷新 Codex 账户")
+                        }
+                    }
+                    Text(
+                        "ChatGPT 登录采用官方设备码流程：验证页可在手机或任意电脑浏览器打开，账户令牌只由 Codex app-server 保存。使用 API 或第三方模型时，在 sai 的统一模型提供商中选择即可。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (!state.codexAccountStatus.authenticated) {
+                        Button(
+                            onClick = viewModel::loginCodexWithDevice,
+                            enabled = !state.codexLoginBusy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(if (state.codexLoginBusy) "等待 Codex 授权…" else "浏览器设备登录（手机 / 电脑）") }
+                    }
+                    state.codexDeviceLogin?.let { login ->
+                        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Text("验证码  ${login.userCode}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(login.verificationUrl, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    OutlinedButton(onClick = {
+                                        context.getSystemService(ClipboardManager::class.java)
+                                            ?.setPrimaryClip(ClipData.newPlainText("Codex 登录验证码", login.userCode))
+                                    }) { Text("复制验证码") }
+                                    OutlinedButton(onClick = {
+                                        context.getSystemService(ClipboardManager::class.java)
+                                            ?.setPrimaryClip(ClipData.newPlainText("Codex 登录地址", login.verificationUrl))
+                                    }) { Text("复制地址") }
+                                }
+                            }
+                        }
+                        OutlinedButton(onClick = viewModel::cancelCodexLogin, modifier = Modifier.fillMaxWidth()) { Text("取消等待") }
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.openSettings("models/providers") },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("管理统一模型提供商") }
+                }
+            }
+        }
+        }
         if (section == "accounts/github") {
         item {
             LaunchedEffect(state.githubDeviceCode) {
@@ -5134,7 +5354,15 @@ private fun SettingsScreen(
                         }
                         state.githubDeviceCode?.let { code ->
                             Text("设备码：$code", style = MaterialTheme.typography.titleMedium)
-                            Text("浏览器已打开 GitHub 授权页。输入上方设备码并确认后，sai 会自动完成登录。", style = MaterialTheme.typography.bodySmall)
+                            Text("可在手机或任意电脑浏览器打开 GitHub 验证页，输入上方设备码。授权成功后手机会自动刷新登录状态。", style = MaterialTheme.typography.bodySmall)
+                            OutlinedButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(ClipboardManager::class.java)
+                                    clipboard?.setPrimaryClip(ClipData.newPlainText("GitHub 登录设备码", code))
+                                    Toast.makeText(context, "设备码已复制，可在电脑浏览器粘贴", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(6.dp)); Text("复制设备码") }
                             OutlinedButton(
                                 onClick = {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/login/device")))

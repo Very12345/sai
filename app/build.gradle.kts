@@ -12,8 +12,8 @@ android {
         applicationId = "com.phoneagent.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 13_012
-        versionName = "1.3.1-preview.2"
+        versionCode = 13_024
+        versionName = "1.3.1-preview.14"
         // Local/device builds must be able to find optional release modules too.
         // CI may override this for forks with -PsaiGithubRepository=owner/repo.
         val githubRepository = providers.gradleProperty("saiGithubRepository").orNull
