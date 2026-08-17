@@ -941,6 +941,8 @@ private const val CODEX_ANDROID_VIEWPORT_FIX = """
       .composer-dropdown-menu,.thread-composer-attach-menu{position:fixed!important;left:8px!important;right:8px!important;bottom:8px!important;width:auto!important;max-width:none!important;max-height:min(62vh,430px)!important;overflow:auto!important}
       .new-thread-open-folder-overlay,.codex-login-modal-backdrop,.project-zip-modal-backdrop,.rename-thread-overlay,.directory-modal-overlay,.sdm-overlay,.image-modal-backdrop,.diff-viewer-backdrop{top:var(--sai-vv-top,0px)!important;bottom:auto!important;height:var(--sai-vv-height,100vh)!important;max-height:var(--sai-vv-height,100vh)!important;padding:8px!important;box-sizing:border-box!important;overflow:auto!important;align-items:center!important}
       .new-thread-project-modal,.new-thread-open-folder,.codex-login-modal,.project-zip-modal,[role=dialog]{max-height:calc(var(--sai-vv-height,100vh) - 16px)!important;box-sizing:border-box!important;overflow:auto!important}
+      [role=dialog],[role=menu],[role=listbox]{max-width:calc(100vw - 16px)!important;box-sizing:border-box!important}
+      [role=menu],[role=listbox]{max-height:min(62vh,430px)!important;overflow:auto!important}
       .mobile-drawer{width:min(88vw,340px)!important;max-width:88vw!important}
     }
   `;
@@ -988,6 +990,7 @@ private const val CLAUDE_ANDROID_VIEWPORT_FIX = """
       #root form+button{padding:3px 6px!important;text-align:left!important}
       #root form+button span{display:none!important}
       #root [role=dialog]{width:calc(100vw - 16px)!important;max-width:none!important;max-height:calc(var(--sai-vv-height,100vh) - 24px)!important;margin:8px!important;overflow:auto!important}
+      #root [role=menu],#root [role=listbox]{max-width:calc(100vw - 16px)!important;max-height:min(62vh,430px)!important;box-sizing:border-box!important;overflow:auto!important}
       #root [class*="fixed"][class*="inset-0"]{top:var(--sai-vv-top,0px)!important;bottom:auto!important;height:var(--sai-vv-height,100vh)!important;padding:8px!important;align-items:flex-start!important;overflow:hidden!important}
       #root [class*="fixed"][class*="inset-0"]>div{width:100%!important;max-width:none!important;height:calc(var(--sai-vv-height,100vh) - 16px)!important;max-height:calc(var(--sai-vv-height,100vh) - 16px)!important;display:flex!important;flex-direction:column!important;overflow:auto!important}
       #root [class*="fixed"][class*="inset-0"]>div>[class*="overflow-y-auto"]{flex:1 1 auto!important;min-height:0!important;max-height:none!important;overflow-y:auto!important}
@@ -1349,17 +1352,60 @@ private fun DshAgentScreen(
                                             html, body, #root { height: var(--sai-android-viewport-height) !important; min-height: var(--sai-android-viewport-height) !important; }
                                             [class$='_headline'] { align-items: center !important; }
                                             [class$='_headlineText'] { font-size: 24px !important; line-height: 30px !important; white-space: nowrap !important; }
-                                            [role='dialog'] { width: calc(100vw - 24px) !important; height: auto !important; max-height: none !important; overflow: auto !important; border-radius: 18px !important; }
-                                            [role='dialog'] > div { max-height: none !important; min-height: min-content !important; overflow: visible !important; }
+                                            [role='dialog'] { width: min(520px, calc(100vw - 16px)) !important; max-width: calc(100vw - 16px) !important; height: auto !important; max-height: calc(var(--sai-android-viewport-height) - 16px) !important; box-sizing: border-box !important; overflow: auto !important; border-radius: 18px !important; }
+                                            [role='dialog'] > div { min-width: 0 !important; max-width: 100% !important; max-height: 100% !important; box-sizing: border-box !important; }
+                                            [role='menu'], [role='listbox'] { max-width: calc(100vw - 16px) !important; max-height: min(62vh, 430px) !important; box-sizing: border-box !important; overflow: auto !important; }
+
+                                            /* DSH's question and plan-review surfaces replace the composer. The
+                                               conversation seat is shrinkable by design, so on a long mobile
+                                               transcript its card can otherwise collapse into an 11px slit.
+                                               Anchor the stable semantic frames to the visual viewport and let
+                                               only their body scroll; generated CSS-module class names are not
+                                               part of this contract. */
+                                            [data-question-key], [data-plan-review-key] {
+                                              position: fixed !important;
+                                              left: var(--sai-dsh-content-left, 56px) !important;
+                                              right: 8px !important;
+                                              bottom: 0 !important;
+                                              width: auto !important;
+                                              height: calc(var(--sai-dsh-question-height, 400px) + 16px) !important;
+                                              min-height: calc(var(--sai-dsh-question-height, 400px) + 16px) !important;
+                                              max-height: calc(var(--sai-dsh-question-height, 400px) + 16px) !important;
+                                              padding: 6px 0 10px 8px !important;
+                                              box-sizing: border-box !important;
+                                              align-items: stretch !important;
+                                              z-index: 2147483000 !important;
+                                              background: linear-gradient(to top, var(--dsw-alias-bg-module-platform, #fff) 88%, transparent) !important;
+                                            }
+                                            [data-question-key] > section, [data-plan-review-key] > section {
+                                              width: 100% !important;
+                                              max-width: none !important;
+                                              height: var(--sai-dsh-question-height, 400px) !important;
+                                              min-height: var(--sai-dsh-question-height, 400px) !important;
+                                              max-height: var(--sai-dsh-question-height, 400px) !important;
+                                              flex: 0 0 auto !important;
+                                              box-sizing: border-box !important;
+                                              overflow: hidden !important;
+                                            }
                                           }`;
                                           document.head.appendChild(style);
                                           const updateSaiViewport = () => {
-                                            const height = Math.max(320, window.innerHeight || (window.visualViewport && window.visualViewport.height) || 0);
-                                            document.documentElement.style.setProperty('--sai-android-viewport-height', height + 'px');
+                                            const viewport = window.visualViewport;
+                                            const height = Math.max(280, (viewport && viewport.height) || window.innerHeight || 0);
+                                            const root = document.documentElement;
+                                            const scrollport = document.querySelector('[data-conversation-scroll]');
+                                            const contentLeft = scrollport ? Math.max(0, Math.round(scrollport.getBoundingClientRect().left)) : 56;
+                                            const questionHeight = Math.min(520, Math.max(220, Math.round(height * 0.72)));
+                                            root.style.setProperty('--sai-android-viewport-height', height + 'px');
+                                            root.style.setProperty('--sai-dsh-content-left', contentLeft + 'px');
+                                            root.style.setProperty('--sai-dsh-question-height', questionHeight + 'px');
                                           };
                                           updateSaiViewport();
                                           window.addEventListener('resize', updateSaiViewport, { passive: true });
-                                          if (window.visualViewport) window.visualViewport.addEventListener('resize', updateSaiViewport, { passive: true });
+                                          if (window.visualViewport) {
+                                            window.visualViewport.addEventListener('resize', updateSaiViewport, { passive: true });
+                                            window.visualViewport.addEventListener('scroll', updateSaiViewport, { passive: true });
+                                          }
                                         })();
                                         """.trimIndent(),
                                         null,
