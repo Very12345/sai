@@ -15,4 +15,12 @@ class AppUpdateManagerTest {
     @Test fun olderBaseCannotOverrideNewerPreview() {
         assertTrue(AppUpdateManager.compareSaiVersions("v1.1.99", "1.2.0-dsh-preview.1") < 0)
     }
+
+    @Test fun newerPreviewIsOfferedToPreviewBuild() {
+        assertTrue(AppUpdateManager.compareSaiVersions("v1.3.1-preview.2", "1.3.1-preview.1") > 0)
+    }
+
+    @Test fun finalReleaseWinsOverItsPreview() {
+        assertTrue(AppUpdateManager.compareSaiVersions("v1.3.1", "1.3.1-preview.99") > 0)
+    }
 }

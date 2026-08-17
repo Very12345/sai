@@ -3,12 +3,13 @@ const repo = location.hostname.endsWith('github.io') && pathParts[0]
   ? `${location.hostname.split('.')[0]}/${pathParts[0]}`
   : 'Very12345/sai';
 const repoUrl = `https://github.com/${repo}`;
-const latestUrl = `${repoUrl}/releases/latest`;
+const previewTag = 'v1.3.1-preview.1';
+const latestUrl = `${repoUrl}/releases/tag/${previewTag}`;
 const fallbackAssets = {
-  mobile: `${latestUrl}/download/sai-android-arm64.apk`,
-  desktop: `${latestUrl}/download/sai-desktop-windows-setup.exe`,
-  voice: `${latestUrl}/download/sai-voice-pack-zh-en.apk`,
-  checksums: `${latestUrl}/download/SHA256SUMS.txt`
+  mobile: `${repoUrl}/releases/download/${previewTag}/sai-android-arm64.apk`,
+  desktop: `${repoUrl}/releases/download/${previewTag}/sai-desktop-windows-setup.exe`,
+  voice: `${repoUrl}/releases/download/${previewTag}/sai-voice-pack-zh-en.apk`,
+  checksums: `${repoUrl}/releases/download/${previewTag}/SHA256SUMS.txt`
 };
 
 document.querySelectorAll('[data-repo]').forEach((link) => { link.href = repoUrl; });
@@ -50,11 +51,13 @@ if ('IntersectionObserver' in window) {
 }
 
 const releaseNote = document.getElementById('release-note');
-fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+fetch(`https://api.github.com/repos/${repo}/releases?per_page=20`, {
   headers: { Accept: 'application/vnd.github+json' }
 })
   .then((response) => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
-  .then((release) => {
+  .then((releases) => {
+    const release = releases.find((item) => item.prerelease && !item.draft && /preview/i.test(item.tag_name));
+    if (!release) throw new Error('没有可用的 Preview Release');
     const asset = (pattern) => release.assets.find((item) => pattern.test(item.name));
     const mobile = asset(/sai-android-arm64\.apk$|arm64.*\.apk$/i);
     const desktop = asset(/sai-desktop-windows-setup\.exe$|setup.*\.exe$|\.msi$/i);
@@ -65,8 +68,8 @@ fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
     if (voice) document.querySelectorAll('[data-voice-download]').forEach((link) => { link.href = voice.browser_download_url; });
     if (checksums) document.querySelectorAll('[data-checksums]').forEach((link) => { link.href = checksums.browser_download_url; });
     const date = new Date(release.published_at).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
-    releaseNote.querySelector('span').textContent = `${release.tag_name} · ${date} 发布 · ${release.assets.length} 个可下载产物`;
+    releaseNote.querySelector('span').textContent = `${release.tag_name} · 开发预览 · ${date} 发布 · ${release.assets.length} 个可下载产物`;
   })
   .catch(() => {
-    releaseNote.querySelector('span').textContent = '暂时无法读取版本信息，可直接前往 GitHub Releases 下载';
+    releaseNote.querySelector('span').textContent = '暂时无法读取 Preview 信息，可直接前往 GitHub Releases 下载';
   });
