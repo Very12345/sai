@@ -23,6 +23,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
@@ -150,6 +154,7 @@ class HarnessWebRuntimeSupervisor(
                 }
             }
             HarnessKind.CLAUDE_CODE -> {
+                ensureClaudeBootstrapProject()
                 environment["CLAUDE_CONFIG_DIR"] = "/var/lib/sai-dsh/.claude"
                 if (profile.protocol == ProviderProtocol.ANTHROPIC_MESSAGES) {
                     environment["ANTHROPIC_BASE_URL"] = profile.baseUrl.trimEnd('/')
@@ -191,7 +196,7 @@ class HarnessWebRuntimeSupervisor(
         // longer than desktop startup, especially while Android is reclaiming
         // memory. Keep the UI responsive while allowing a full minute.
         repeat(300) {
-            if (endpointReady(spec.port)) {
+            if (endpointReady(kind, spec.port)) {
                 val state = HarnessWebRuntimeState(HarnessWebPhase.READY, "${label(kind)} GUI 已就绪", "http://127.0.0.1:${spec.port}/")
                 update(kind, state)
                 monitors[kind] = monitor(kind, spec.port)
@@ -207,7 +212,7 @@ class HarnessWebRuntimeSupervisor(
         var failures = 0
         while (true) {
             delay(5_000)
-            failures = if (endpointReady(port)) 0 else failures + 1
+            failures = if (endpointReady(kind, port)) 0 else failures + 1
             if (failures >= 3) {
                 update(kind, HarnessWebRuntimeState(HarnessWebPhase.FAILED, "${label(kind)} GUI 已停止响应"))
                 return@launch
@@ -229,10 +234,37 @@ class HarnessWebRuntimeSupervisor(
         true
     }.getOrDefault(false)
 
-    private fun endpointReady(port: Int): Boolean = runCatching {
-        healthClient.newCall(Request.Builder().url("http://127.0.0.1:$port/").get().build())
-            .execute().use { response -> response.code in 200..499 }
+    private fun endpointReady(kind: HarnessKind, port: Int): Boolean = runCatching {
+        val paths = if (kind == HarnessKind.CLAUDE_CODE) listOf("/", "/api/projects") else listOf("/")
+        paths.all { path ->
+            healthClient.newCall(Request.Builder().url("http://127.0.0.1:$port$path").get().build())
+                .execute().use { response -> response.isSuccessful }
+        }
     }.getOrDefault(false)
+
+    /**
+     * claude-code-webui discovers projects from HOME/.claude.json and only
+     * exposes entries that already have a matching history directory. A fresh
+     * sai install has neither. Bootstrap the mounted workspace without
+     * replacing any existing Claude settings so the first screen is usable and
+     * its /api/projects health endpoint cannot fail with ENOENT.
+     */
+    private fun ensureClaudeBootstrapProject() {
+        val claudeRoot = File(provisioner.home, ".claude")
+        check(claudeRoot.isDirectory || claudeRoot.mkdirs()) { "无法创建 Claude Code 配置目录" }
+        val history = File(claudeRoot, "projects/$CLAUDE_WORKSPACE_ENCODED")
+        check(history.isDirectory || history.mkdirs()) { "无法创建 Claude Code 项目历史目录" }
+        val config = File(provisioner.home, ".claude.json")
+        val merged = runCatching { mergeClaudeProjectConfig(config.takeIf(File::isFile)?.readText()) }
+            .getOrElse { error("Claude Code 项目配置损坏：${it.message}") }
+        if (config.takeIf(File::isFile)?.readText() == merged) return
+        val temporary = File(provisioner.home, ".claude.json.sai.tmp")
+        temporary.writeText(merged)
+        if (!temporary.renameTo(config)) {
+            temporary.copyTo(config, overwrite = true)
+            temporary.delete()
+        }
+    }
 
     private fun update(kind: HarnessKind, value: HarnessWebRuntimeState) = _states.update { it + (kind to value) }
     private fun mutex(kind: HarnessKind) = lifecycle.computeIfAbsent(kind) { Mutex() }
@@ -259,8 +291,20 @@ class HarnessWebRuntimeSupervisor(
         "/opt/sai-dsh/" + relativeTo(provisioner.current).invariantSeparatorsPath
 
     companion object {
+        private const val CLAUDE_WORKSPACE = "/home/phoneagent"
+        private const val CLAUDE_WORKSPACE_ENCODED = "-home-phoneagent"
         private val SUPPORTED = setOf(HarnessKind.CODEX, HarnessKind.CLAUDE_CODE)
         private val CODEX_EXECUTABLES = setOf("codex", "codex-code-mode-host", "rg", "bwrap", "zsh")
         private fun defaultStates() = SUPPORTED.associateWith { HarnessWebRuntimeState() }
+
+        internal fun mergeClaudeProjectConfig(raw: String?): String {
+            val root = raw?.takeIf(String::isNotBlank)?.let { Json.parseToJsonElement(it).jsonObject }
+                ?: JsonObject(emptyMap())
+            val projects = root["projects"]?.jsonObject ?: JsonObject(emptyMap())
+            val project = projects[CLAUDE_WORKSPACE] ?: buildJsonObject { }
+            return JsonObject(
+                root + ("projects" to JsonObject(projects + (CLAUDE_WORKSPACE to project))),
+            ).toString()
+        }
     }
 }

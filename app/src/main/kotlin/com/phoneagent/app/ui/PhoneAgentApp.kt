@@ -802,7 +802,11 @@ private fun HarnessWebScreen(
             modifier = Modifier.fillMaxSize(),
             factory = { viewContext ->
                 WebView(viewContext).apply {
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    WebView.setWebContentsDebuggingEnabled(com.phoneagent.app.BuildConfig.DEBUG)
+                    setBackgroundColor(
+                        if (kind == HarnessKind.CODEX) android.graphics.Color.WHITE
+                        else android.graphics.Color.TRANSPARENT,
+                    )
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     settings.allowFileAccess = false
@@ -819,6 +823,17 @@ private fun HarnessWebScreen(
                             }
                             return true
                         }
+
+                        override fun onPageFinished(view: WebView, url: String) {
+                            super.onPageFinished(view, url)
+                            if (kind == HarnessKind.CODEX) {
+                                // Android System WebView can resolve 100dvh to
+                                // zero when the WebView is hosted in a measured
+                                // Compose AndroidView. Pin Codex's root grid to
+                                // the actual visual viewport instead.
+                                view.evaluateJavascript(CODEX_ANDROID_VIEWPORT_FIX, null)
+                            }
+                        }
                     }
                     loadUrl(trustedUrl)
                 }
@@ -827,6 +842,21 @@ private fun HarnessWebScreen(
         )
     }
 }
+
+private const val CODEX_ANDROID_VIEWPORT_FIX = """
+(() => {
+  const id = 'sai-android-viewport-fix';
+  let style = document.getElementById(id);
+  if (!style) {
+    style = document.createElement('style');
+    style.id = id;
+    document.head.appendChild(style);
+  }
+  style.textContent = 'html,body,#app{width:100%;height:100%;min-height:100%;margin:0}' +
+    '.desktop-layout{position:fixed!important;inset:0!important;width:auto!important;' +
+    'height:auto!important;min-height:0!important}';
+})();
+"""
 
 @Composable
 private fun CliHarnessScreen(

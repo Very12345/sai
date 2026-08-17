@@ -3,7 +3,7 @@ const repo = location.hostname.endsWith('github.io') && pathParts[0]
   ? `${location.hostname.split('.')[0]}/${pathParts[0]}`
   : 'Very12345/sai';
 const repoUrl = `https://github.com/${repo}`;
-const previewTag = 'v1.3.1-preview.1';
+const previewTag = 'v1.3.1-preview.2';
 const latestUrl = `${repoUrl}/releases/tag/${previewTag}`;
 const fallbackAssets = {
   mobile: `${repoUrl}/releases/download/${previewTag}/sai-android-arm64.apk`,

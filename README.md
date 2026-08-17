@@ -4,7 +4,7 @@ sai is a GPLv3 Android coding agent designed around a local workspace. Its name 
 a Debian/PRoot-compatible runtime, explicit tool approvals, and bring-your-own
 model API credentials.
 
-## Current implementation (1.3.1 Preview 1 / runtime r58)
+## Current implementation (1.3.1 Preview 2 / runtime r58)
 
 - sai now provides three real Harness clients instead of reimplementing their agent loops: pinned
   DeepSeek Harness 0.1.0-rc.6, official Codex through `codex app-server`, and Claude Code through its
