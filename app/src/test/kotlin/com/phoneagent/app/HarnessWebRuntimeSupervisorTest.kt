@@ -5,6 +5,7 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
+import com.phoneagent.provider.ProviderPresets
 
 class HarnessWebRuntimeSupervisorTest {
     @Test
@@ -27,5 +28,17 @@ class HarnessWebRuntimeSupervisorTest {
         assertEquals("\"dark\"", root["theme"].toString())
         assertNotNull(projects?.get("/home/other"))
         assertNotNull(projects?.get("/home/phoneagent"))
+    }
+
+    @Test
+    fun `Codex provider base includes the request API prefix exactly once`() {
+        val zen = ProviderPresets.all.first { it.id == "opencode-zen" }
+        val qwen = ProviderPresets.all.first { it.id == "qwen" }
+
+        assertEquals("https://opencode.ai/zen/v1", HarnessWebRuntimeSupervisor.codexProviderBaseUrl(zen))
+        assertEquals(
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            HarnessWebRuntimeSupervisor.codexProviderBaseUrl(qwen),
+        )
     }
 }

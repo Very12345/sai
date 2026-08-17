@@ -71,6 +71,7 @@ class AppContainer(
             profile to providerSettings.credentialFor(profile.id)?.apiKey?.toCharArray()
         }
     }
+    val codexAccounts by lazy { CodexAccountManager(harnessWebRuntime) }
     val managerHarness by lazy { SaiManagerHarness(this) }
     val desktopConnection by lazy { DesktopConnectionManager(application, this) }
 }
@@ -88,13 +89,19 @@ class ProviderSettingsRepository(
     private val _profile = MutableStateFlow(loadActiveProfile(initialProfiles))
     val profile: StateFlow<ProviderProfile> = _profile.asStateFlow()
 
-    fun hasCredential(): Boolean = secrets.contains(secretAlias(_profile.value.id))
+    fun hasCredential(): Boolean = credentialFor(_profile.value.id) != null
 
     fun credential(): ProviderCredential? = credentialFor(_profile.value.id)
 
     fun credentialFor(providerId: String): ProviderCredential? {
-        val chars = secrets.get(secretAlias(providerId)) ?: return null
-        return try { ProviderCredential(chars.concatToString()) } finally { chars.fill('\u0000') }
+        val chars = secrets.get(secretAlias(providerId))
+        if (chars != null) {
+            return try { ProviderCredential(chars.concatToString()) } finally { chars.fill('\u0000') }
+        }
+        return _profiles.value.firstOrNull { it.id == providerId }
+            ?.anonymousApiKey
+            ?.takeIf(String::isNotBlank)
+            ?.let(::ProviderCredential)
     }
 
     fun profileFor(providerId: String): ProviderProfile? = _profiles.value.firstOrNull { it.id == providerId }
@@ -110,13 +117,16 @@ class ProviderSettingsRepository(
     fun resolveCredentialReference(ref: String): CharArray? {
         require(CREDENTIAL_REF.matches(ref)) { "Invalid credential reference" }
         val provider = _profiles.value.firstOrNull { credentialRefForProvider(it.id) == ref }
-        return secrets.get(provider?.let { secretAlias(it.id) } ?: dshSecretAlias(ref))
+        val stored = secrets.get(provider?.let { secretAlias(it.id) } ?: dshSecretAlias(ref))
+        if (stored != null) return stored
+        return provider?.anonymousApiKey?.takeIf(String::isNotBlank)?.toCharArray()
     }
 
     fun hasCredentialReference(ref: String): Boolean {
         require(CREDENTIAL_REF.matches(ref)) { "Invalid credential reference" }
         val provider = _profiles.value.firstOrNull { credentialRefForProvider(it.id) == ref }
-        return secrets.contains(provider?.let { secretAlias(it.id) } ?: dshSecretAlias(ref))
+        return secrets.contains(provider?.let { secretAlias(it.id) } ?: dshSecretAlias(ref)) ||
+            !provider?.anonymousApiKey.isNullOrBlank()
     }
 
     fun putCredentialReference(ref: String, value: CharArray) {
@@ -174,11 +184,16 @@ class ProviderSettingsRepository(
         val stored = preferences.getString("provider_profiles", null)?.let { raw ->
             runCatching { json.decodeFromString(ListSerializer(ProviderProfile.serializer()), raw) }.getOrNull()
         }.orEmpty().map(::refreshOfficialPricing)
-        if (stored.isNotEmpty()) return stored.distinctBy(ProviderProfile::id)
+        if (stored.isNotEmpty()) return withRequiredPublicProviders(stored)
         val legacy = preferences.getString("active_profile", null)?.let {
             runCatching { json.decodeFromString<ProviderProfile>(it) }.getOrNull()
         }?.let(::refreshOfficialPricing)
-        return listOf(legacy ?: ProviderPresets.all.first())
+        return withRequiredPublicProviders(listOf(legacy ?: ProviderPresets.all.first()))
+    }
+
+    private fun withRequiredPublicProviders(profiles: List<ProviderProfile>): List<ProviderProfile> {
+        val zen = ProviderPresets.all.first { it.id == "opencode-zen" }
+        return (profiles + zen).distinctBy(ProviderProfile::id)
     }
 
     private fun loadActiveProfile(profiles: List<ProviderProfile>): ProviderProfile =

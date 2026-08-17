@@ -97,6 +97,13 @@ data class ProviderProfile(
     val modelsPath: String? = null,
     val defaultModel: String,
     val customHeaders: Map<String, String> = emptyMap(),
+    /**
+     * Public, non-secret bearer value used by providers that intentionally
+     * allow anonymous access. It is never written to Android Keystore because
+     * it is part of the public provider contract (for example OpenCode Zen's
+     * unauthenticated free tier).
+     */
+    val anonymousApiKey: String? = null,
     val contextWindow: Int = 128_000,
     val maxOutputTokens: Int = 16_384,
     val reasoningEffort: ReasoningEffort = ReasoningEffort.AUTO,

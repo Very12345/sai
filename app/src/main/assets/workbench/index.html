@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>sai Workbench</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="workbench.css">
+</head>
+<body>
+  <main id="files" class="page hidden">
+    <header class="explorer-header">
+      <button id="placesButton" class="icon-button" aria-label="位置">☰</button>
+      <button id="pathButton" class="path-button"><span id="pathText">/</span></button>
+      <label class="search"><span>⌕</span><input id="searchInput" type="search" placeholder="搜索"></label>
+    </header>
+    <nav id="fileToolbar" class="toolbar">
+      <button data-action="up" title="上一级" aria-label="上一级"><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg></button>
+      <button data-action="refresh" title="刷新" aria-label="刷新"><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5M5.7 9a7 7 0 0 1 11.7-2.6L20 9M4 15l2.6 2.6A7 7 0 0 0 18.3 15"/></svg></button>
+      <span class="separator"></span>
+      <button data-action="new-folder" title="新建文件夹" aria-label="新建文件夹"><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h6l2 2h10v10.5H3zM16 11v6M13 14h6"/></svg></button>
+      <button data-action="new-file" title="新建文件" aria-label="新建文件"><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6zM14 3v5h5M12 11v6M9 14h6"/></svg></button>
+      <button data-action="import" title="导入" aria-label="导入"><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M4 19h16"/></svg></button>
+      <button data-action="copy" title="复制" aria-label="复制" disabled><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>
+      <button data-action="cut" title="剪切" aria-label="剪切" disabled><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.5"/><circle cx="6" cy="17" r="2.5"/><path d="m8.2 8.2 10.3 8.3M8.2 15.8 18.5 7.5"/></svg></button>
+      <button data-action="paste" title="粘贴" aria-label="粘贴" disabled><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H6a2 2 0 0 0-2 2v13h14V7a2 2 0 0 0-2-2h-3"/><rect x="8" y="3" width="6" height="4" rx="1"/><path d="M8 11h6M8 15h6"/></svg></button>
+      <button data-action="share" title="分享/导出" aria-label="分享或导出" disabled><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5h5v5M19 5 10 14M18 13v6H5V6h6"/></svg></button>
+      <button data-action="trash" title="移入回收站" aria-label="移入回收站" class="danger" disabled><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg></button>
+      <button data-action="hidden" title="显示或隐藏隐藏文件" aria-label="显示或隐藏隐藏文件"><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-5 9.5-5 9.5 5 9.5 5-3.5 5-9.5 5-9.5-5-9.5-5Z"/><circle cx="12" cy="12" r="2.5"/></svg></button>
+    </nav>
+    <section class="explorer-body">
+      <aside id="places" class="places"></aside>
+      <section class="file-area">
+        <div id="storage" class="storage"></div>
+        <div id="fileGrid" class="file-grid"></div>
+      </section>
+    </section>
+  </main>
+
+  <main id="terminal" class="page terminal-page hidden">
+    <header class="terminal-header">
+      <div id="terminalTabs" class="terminal-tabs"></div>
+      <button id="newTerminal" class="terminal-action" aria-label="新建终端">＋</button>
+      <button id="terminalPower" class="terminal-action" aria-label="启动或停止">▶</button>
+    </header>
+    <div id="terminalHost"></div>
+    <nav class="terminal-keys">
+      <button data-seq="\u001b">Esc</button><button data-seq="\t">Tab</button>
+      <button data-seq="\u0003">Ctrl-C</button><button data-seq="\u0004">Ctrl-D</button>
+      <button data-seq="\u001b[D">←</button><button data-seq="\u001b[A">↑</button>
+      <button data-seq="\u001b[B">↓</button><button data-seq="\u001b[C">→</button>
+    </nav>
+  </main>
+
+  <dialog id="textDialog">
+    <form method="dialog">
+      <h3 id="dialogTitle"></h3>
+      <input id="dialogInput" autocomplete="off">
+      <div class="dialog-actions"><button value="cancel">取消</button><button id="dialogConfirm" value="default">确定</button></div>
+    </form>
+  </dialog>
+  <dialog id="editorDialog" class="editor-dialog" tabindex="-1">
+    <form method="dialog">
+      <header><strong id="editorTitle">文件</strong><span id="editorBadge"></span></header>
+      <textarea id="editorText" spellcheck="false"></textarea>
+      <div class="dialog-actions"><button value="cancel">关闭</button><button id="editorSave" value="default">保存</button></div>
+    </form>
+  </dialog>
+  <div id="toast" class="toast"></div>
+
+  <script src="vendor/xterm.js"></script>
+  <script src="workbench.js"></script>
+</body>
+</html>

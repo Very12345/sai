@@ -110,7 +110,7 @@ class HarnessWebRuntimeSupervisor(
             if (credential != null) {
                 when (kind) {
                     HarnessKind.CODEX -> if (profile.protocol in setOf(ProviderProtocol.OPENAI_RESPONSES, ProviderProtocol.OPENAI_CHAT)) {
-                        sensitive["OPENAI_API_KEY"] = credential.concatToString()
+                        sensitive["SAI_CODEX_API_KEY"] = credential.concatToString()
                     }
                     HarnessKind.CLAUDE_CODE -> if (profile.protocol == ProviderProtocol.ANTHROPIC_MESSAGES) {
                         sensitive["ANTHROPIC_API_KEY"] = credential.concatToString()
@@ -129,6 +129,10 @@ class HarnessWebRuntimeSupervisor(
         when (kind) {
             HarnessKind.CODEX -> {
                 environment["CODEX_HOME"] = "/var/lib/sai-dsh/.codex"
+                syncCodexProviderConfig(
+                    profile = profile,
+                    credentialAvailable = sensitive.containsKey("SAI_CODEX_API_KEY"),
+                )
                 val codexCommand = File(provisioner.current, "app/node_modules/.bin/codex")
                 val codexFiles = File(provisioner.current, "app/node_modules/@openai")
                     .walkTopDown().filter(File::isFile).toList()
@@ -149,9 +153,6 @@ class HarnessWebRuntimeSupervisor(
                 // install. Point the GUI at the audited native assets directly.
                 environment["CODEXUI_CODEX_COMMAND"] = codexNative.toGuestRuntimePath()
                 environment["CODEXUI_RG_COMMAND"] = codexRipgrep.toGuestRuntimePath()
-                if (profile.protocol in setOf(ProviderProtocol.OPENAI_RESPONSES, ProviderProtocol.OPENAI_CHAT)) {
-                    environment["OPENAI_BASE_URL"] = profile.baseUrl.trimEnd('/')
-                }
             }
             HarnessKind.CLAUDE_CODE -> {
                 ensureClaudeBootstrapProject()
@@ -192,10 +193,11 @@ class HarnessWebRuntimeSupervisor(
             ),
         )
         sensitive.values.forEach { /* The runtime receives copied strings; do not retain another map. */ }
-        // Cold-starting the native Codex/Claude runtimes on a phone can take
-        // longer than desktop startup, especially while Android is reclaiming
-        // memory. Keep the UI responsive while allowing a full minute.
-        repeat(300) {
+        // Cold-starting Claude's 300+ MB native binary under PRoot can spend
+        // more than a minute validating the CLI on a phone. Do not mark a
+        // healthy process as failed while that one-time validation is still
+        // running; the Compose UI remains responsive throughout the wait.
+        repeat(900) {
             if (endpointReady(kind, spec.port)) {
                 val state = HarnessWebRuntimeState(HarnessWebPhase.READY, "${label(kind)} GUI 已就绪", "http://127.0.0.1:${spec.port}/")
                 update(kind, state)
@@ -205,7 +207,7 @@ class HarnessWebRuntimeSupervisor(
             delay(200)
         }
         val snapshot = jobs[kind]?.id?.let { id -> runtime.listJobs().firstOrNull { it.id == id } }
-        error(snapshot?.outputPreview?.takeLast(2_000).orEmpty().ifBlank { "${label(kind)} GUI 未在 30 秒内就绪" })
+        error(snapshot?.outputPreview?.takeLast(2_000).orEmpty().ifBlank { "${label(kind)} GUI 未在 180 秒内就绪" })
     }
 
     private fun monitor(kind: HarnessKind, port: Int) = scope.launch {
@@ -266,6 +268,43 @@ class HarnessWebRuntimeSupervisor(
         }
     }
 
+    /**
+     * The embedded Codex GUI drives the official app-server, but its upstream
+     * default silently enables a community free provider when no Codex account
+     * exists. sai instead makes the active unified provider explicit. Secrets
+     * remain process-only through env_key and never enter config.toml.
+     */
+    private fun syncCodexProviderConfig(profile: ProviderProfile, credentialAvailable: Boolean) {
+        val codexHome = File(provisioner.home, ".codex")
+        check(codexHome.isDirectory || codexHome.mkdirs()) { "无法创建 Codex 配置目录" }
+        val config = File(codexHome, "config.toml")
+        val supported = profile.protocol in setOf(ProviderProtocol.OPENAI_RESPONSES, ProviderProtocol.OPENAI_CHAT)
+        val body = if (supported && credentialAvailable) {
+            val wireApi = if (profile.protocol == ProviderProtocol.OPENAI_RESPONSES) "responses" else "chat"
+            val providerBase = codexProviderBaseUrl(profile)
+            """
+                # Managed by sai. Change providers from sai's unified model settings.
+                model = "${tomlEscape(profile.defaultModel)}"
+                model_provider = "sai_unified"
+
+                [model_providers.sai_unified]
+                name = "${tomlEscape(profile.displayName)}"
+                base_url = "${tomlEscape(providerBase)}"
+                wire_api = "$wireApi"
+                env_key = "SAI_CODEX_API_KEY"
+            """.trimIndent() + "\n"
+        } else {
+            "# Managed by sai. Select an OpenAI-compatible provider in sai, or sign in to Codex.\n"
+        }
+        if (config.takeIf(File::isFile)?.readText() == body) return
+        val temporary = File(codexHome, "config.toml.sai.tmp")
+        temporary.writeText(body)
+        if (!temporary.renameTo(config)) {
+            temporary.copyTo(config, overwrite = true)
+            temporary.delete()
+        }
+    }
+
     private fun update(kind: HarnessKind, value: HarnessWebRuntimeState) = _states.update { it + (kind to value) }
     private fun mutex(kind: HarnessKind) = lifecycle.computeIfAbsent(kind) { Mutex() }
 
@@ -306,5 +345,21 @@ class HarnessWebRuntimeSupervisor(
                 root + ("projects" to JsonObject(projects + (CLAUDE_WORKSPACE to project))),
             ).toString()
         }
+
+        internal fun codexProviderBaseUrl(profile: ProviderProfile): String {
+            val base = profile.baseUrl.trimEnd('/')
+            val requestPrefix = profile.requestPath
+                .removeSuffix("/chat/completions")
+                .removeSuffix("/responses")
+                .trimEnd('/')
+            if (requestPrefix.isBlank() || base.endsWith(requestPrefix)) return base
+            return base + if (requestPrefix.startsWith('/')) requestPrefix else "/$requestPrefix"
+        }
+
+        internal fun tomlEscape(value: String): String = value
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", " ")
+            .replace("\r", " ")
     }
 }
