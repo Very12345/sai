@@ -2,7 +2,7 @@ param(
     [string]$CacheRoot = 'D:\Code\sai-dsh-runtime',
     [string]$NodeVersion = '24.19.0',
     [string]$DshVersion = '0.1.0-rc.6',
-    [int]$RuntimeRevision = 57,
+    [int]$RuntimeRevision = 58,
     [string]$DshForkRoot = 'D:\Code\deepseek-harness',
     [string]$CodexGuiRoot = 'D:\Code\sai-gui-research\codex-mobile',
     [string]$ClaudeGuiRoot = 'D:\Code\sai-gui-research\claude-code-webui',
@@ -149,6 +149,7 @@ foreach ($target in @(
     "@sai/dsh-market": "file:vendor/market",
     "@sai/dsh-models": "file:vendor/models",
     "@sai/dsh-pet": "file:vendor/pet",
+    "@sai/dsh-proot-shell": "file:vendor/proot-shell",
     "@sai/dsh-request-guard": "file:vendor/request-guard",
     "@sai/dsh-ui": "file:vendor/ui",
     "@sai/dsh-vision": "file:vendor/vision",
@@ -174,6 +175,19 @@ foreach ($target in @(
   name: '@deepseek-ai/dsh-credentials-local'
   disabled: true
 
+# Android exposes a Linux userspace through PRoot, but it cannot host DSH's
+# kernel/Windows native sandbox backends. sandbox-local imports the Windows ACL
+# bridge (and Koffi) eagerly even on Linux, which crashes before the platform
+# runner is selected. Keep sai's approval + filesystem boundaries and use the
+# Android PRoot-aware executor inside the app-private compatibility runtime.
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+  disabled: true
+
+- id: bash-sandbox
+  name: '@deepseek-ai/dsh-bash-sandbox'
+  disabled: true
+
 - id: sandbox-policy
   name: '@deepseek-ai/dsh-sandbox-policy'
   config:
@@ -190,6 +204,7 @@ foreach ($target in @(
       danger-full-access: { sandbox: danger-full-access, approval: never }
 
 - insert:
+    - { id: bash-proot, name: '@sai/dsh-proot-shell', config: { timeoutMs: 60000 } }
     - { id: sai-credentials, name: '@sai/dsh-credentials' }
     - { id: sai-android, name: '@sai/dsh-android' }
     - { id: sai-models, name: '@sai/dsh-models' }

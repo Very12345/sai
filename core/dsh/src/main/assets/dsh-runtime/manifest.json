@@ -1,38 +1,38 @@
 {
-  "schemaVersion": 1,
-  "runtimeVersion": "sai-dsh-0.1.0-rc.6-node-24.19.0-r57",
-  "dshVersion": "0.1.0-rc.6",
-  "nodeVersion": "24.19.0",
-  "sourceCommit": "de944f41071912c5c9bf00eb3ad11b581eb5136b",
-  "sourceRepository": "https://github.com/Very12345/deepseek-harness",
-  "webUiVariant": "sai-mobile-r57",
-  "clientSources": {
-    "codexMobile": {
-      "repository": "https://github.com/friuns2/codex-mobile",
-      "commit": "fac2291b0e606c869d4760f56c0f49172214cb79",
-      "license": "MIT"
-    },
-    "claudeCodeWebUi": {
-      "repository": "https://github.com/sugyan/claude-code-webui",
-      "commit": "9109263873cfc2a6eb0a160396fdfd60c2d6a37f",
-      "license": "MIT"
-    }
-  },
-  "packageLockSha256": {
-    "x86_64": "0138fb63ad55f4fcfedc0c6796441d7d6f2f0b44caa1bf900652a73ae9bfd9b7",
-    "arm64-v8a": "74a0dc6e1b8ab44efb1da6749086358c1c88abc938d6450c69ef627d18db7f33"
-  },
-  "port": 3080,
-  "archives": {
-    "x86_64": {
-      "asset": "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-x86_64.tar.xz",
-      "sha256": "86c18fc395bfaa36cdfcd73e465e0aacec8a0f06d5d22d0d51a1281cc05aea03",
-      "bytes": 218847124
-    },
-    "arm64-v8a": {
-      "asset": "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-arm64-v8a.tar.xz",
-      "sha256": "7ca3bf99667f52105685c96cebea42489931020bf00bdd0084e399a7f133105a",
-      "bytes": 203363100
-    }
-  }
+    "schemaVersion":  1,
+    "runtimeVersion":  "sai-dsh-0.1.0-rc.6-node-24.19.0-r58",
+    "dshVersion":  "0.1.0-rc.6",
+    "nodeVersion":  "24.19.0",
+    "sourceCommit":  "de944f41071912c5c9bf00eb3ad11b581eb5136b",
+    "sourceRepository":  "https://github.com/Very12345/deepseek-harness",
+    "webUiVariant":  "sai-mobile-r58",
+    "clientSources":  {
+                          "codexMobile":  {
+                                              "repository":  "https://github.com/friuns2/codex-mobile",
+                                              "commit":  "fac2291b0e606c869d4760f56c0f49172214cb79",
+                                              "license":  "MIT"
+                                          },
+                          "claudeCodeWebUi":  {
+                                                  "repository":  "https://github.com/sugyan/claude-code-webui",
+                                                  "commit":  "9109263873cfc2a6eb0a160396fdfd60c2d6a37f",
+                                                  "license":  "MIT"
+                                              }
+                      },
+    "packageLockSha256":  {
+                              "arm64-v8a":  "acbc01b16e3d41bbed6c05ef24fe17937ca67744664145b9456d24e614cc62f3",
+                              "x86_64":  "e2eb66eaa1eb774abba8a577f22ca623caf5ef3004b70716683dd94f9bf19eb1"
+                          },
+    "port":  3080,
+    "archives":  {
+                     "arm64-v8a":  {
+                                       "asset":  "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-arm64-v8a.tar.xz",
+                                       "sha256":  "1472d8cd1d3c189c7e4e5df440ed09ebff0e8c8af201da3b5b087e5f6076a6b1",
+                                       "bytes":  203369524
+                                   },
+                     "x86_64":  {
+                                    "asset":  "dsh-runtime/sai-dsh-0.1.0-rc.6-node-24.19.0-x86_64.tar.xz",
+                                    "sha256":  "c5e49363c4f000ad0f32f24dce82bcf01cee11e379eaec9db5706448001d720a",
+                                    "bytes":  218812252
+                                }
+                 }
 }

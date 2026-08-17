@@ -63,9 +63,18 @@ class DshRuntimeSupervisor(
 
     suspend fun restart() {
         lifecycle.withLock {
-            stopProcess()
-            requested.set(true)
-            startProcess()
+            runCatching {
+                stopProcess()
+                requested.set(true)
+                startProcess()
+            }.onFailure { error ->
+                requested.set(false)
+                _state.value = DshRuntimeState(
+                    DshRuntimePhase.FAILED,
+                    error.message ?: "DSH failed to restart",
+                    runtimeVersion = provisioner.activeRuntimeVersion,
+                )
+            }
         }
     }
 

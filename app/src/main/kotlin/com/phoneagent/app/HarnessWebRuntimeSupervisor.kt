@@ -23,6 +23,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 enum class HarnessWebPhase { STOPPED, PREPARING, STARTING, READY, FAILED }
 
@@ -50,6 +53,11 @@ class HarnessWebRuntimeSupervisor(
     private val jobs = ConcurrentHashMap<HarnessKind, RuntimeJob>()
     private val monitors = ConcurrentHashMap<HarnessKind, Job>()
     private val _states = MutableStateFlow(defaultStates())
+    private val healthClient = OkHttpClient.Builder()
+        .connectTimeout(1, TimeUnit.SECONDS)
+        .readTimeout(1, TimeUnit.SECONDS)
+        .callTimeout(2, TimeUnit.SECONDS)
+        .build()
     val states: StateFlow<Map<HarnessKind, HarnessWebRuntimeState>> = _states.asStateFlow()
 
     fun ensureStarted(kind: HarnessKind) {
@@ -59,8 +67,12 @@ class HarnessWebRuntimeSupervisor(
     }
 
     suspend fun restart(kind: HarnessKind) = mutex(kind).withLock {
-        stopProcess(kind)
-        startProcess(kind)
+        runCatching {
+            stopProcess(kind)
+            startProcess(kind)
+        }.onFailure { error ->
+            update(kind, HarnessWebRuntimeState(HarnessWebPhase.FAILED, error.message ?: "${label(kind)} GUI 启动失败"))
+        }
     }
 
     suspend fun stop(kind: HarnessKind) = mutex(kind).withLock {
@@ -79,6 +91,9 @@ class HarnessWebRuntimeSupervisor(
     }
 
     private suspend fun startProcess(kind: HarnessKind) {
+        check(workspaceRoot.isDirectory || workspaceRoot.mkdirs()) {
+            "Harness 工作目录不可用：${workspaceRoot.absolutePath}"
+        }
         val spec = spec(kind)
         val guiEntry = File(provisioner.current, spec.hostEntry)
         check(guiEntry.isFile) {
@@ -115,6 +130,8 @@ class HarnessWebRuntimeSupervisor(
                     .walkTopDown().filter(File::isFile).toList()
                 val codexNative = codexFiles.firstOrNull { it.parentFile?.name == "bin" && it.name == "codex" }
                     ?: error("离线运行时缺少 Codex 原生二进制")
+                val codexRipgrep = codexFiles.firstOrNull { it.parentFile?.name == "codex-path" && it.name == "rg" }
+                    ?: error("离线运行时缺少 Codex ripgrep")
                 codexFiles.filter { it.name in CODEX_EXECUTABLES }.forEach { binary ->
                     check(binary.canExecute() || binary.setExecutable(true, true)) { "Codex 组件不可执行：${binary.name}" }
                 }
@@ -122,7 +139,12 @@ class HarnessWebRuntimeSupervisor(
                     (codexNative.canExecute() || codexNative.setExecutable(true, true))) {
                     "Codex 命令不可执行"
                 }
-                environment["CODEXUI_CODEX_COMMAND"] = "/opt/sai-dsh/app/node_modules/.bin/codex"
+                // The npm .bin shim invokes Node before the native CLI. Inside
+                // Android PRoot that extra spawn can obscure a perfectly valid
+                // static Codex binary, causing the GUI to attempt an online npm
+                // install. Point the GUI at the audited native assets directly.
+                environment["CODEXUI_CODEX_COMMAND"] = codexNative.toGuestRuntimePath()
+                environment["CODEXUI_RG_COMMAND"] = codexRipgrep.toGuestRuntimePath()
                 if (profile.protocol in setOf(ProviderProtocol.OPENAI_RESPONSES, ProviderProtocol.OPENAI_CHAT)) {
                     environment["OPENAI_BASE_URL"] = profile.baseUrl.trimEnd('/')
                 }
@@ -150,7 +172,9 @@ class HarnessWebRuntimeSupervisor(
         jobs[kind] = runtime.startJob(
             RunRequest(
                 command = command,
-                workingDirectory = "/workspace",
+                // ProotCommandBuilder exposes the selected host workspace at
+                // /home/phoneagent. /workspace is not a guaranteed guest mount.
+                workingDirectory = "/home/phoneagent",
                 workspaceHostPath = workspaceRoot.absolutePath,
                 environment = environment,
                 sensitiveEnvironment = sensitive,
@@ -163,8 +187,11 @@ class HarnessWebRuntimeSupervisor(
             ),
         )
         sensitive.values.forEach { /* The runtime receives copied strings; do not retain another map. */ }
-        repeat(150) {
-            if (portOpen(spec.port)) {
+        // Cold-starting the native Codex/Claude runtimes on a phone can take
+        // longer than desktop startup, especially while Android is reclaiming
+        // memory. Keep the UI responsive while allowing a full minute.
+        repeat(300) {
+            if (endpointReady(spec.port)) {
                 val state = HarnessWebRuntimeState(HarnessWebPhase.READY, "${label(kind)} GUI 已就绪", "http://127.0.0.1:${spec.port}/")
                 update(kind, state)
                 monitors[kind] = monitor(kind, spec.port)
@@ -180,7 +207,7 @@ class HarnessWebRuntimeSupervisor(
         var failures = 0
         while (true) {
             delay(5_000)
-            failures = if (portOpen(port)) 0 else failures + 1
+            failures = if (endpointReady(port)) 0 else failures + 1
             if (failures >= 3) {
                 update(kind, HarnessWebRuntimeState(HarnessWebPhase.FAILED, "${label(kind)} GUI 已停止响应"))
                 return@launch
@@ -198,8 +225,13 @@ class HarnessWebRuntimeSupervisor(
     }
 
     private fun portOpen(port: Int): Boolean = runCatching {
-        Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), 160) }
+        Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), 1_000) }
         true
+    }.getOrDefault(false)
+
+    private fun endpointReady(port: Int): Boolean = runCatching {
+        healthClient.newCall(Request.Builder().url("http://127.0.0.1:$port/").get().build())
+            .execute().use { response -> response.code in 200..499 }
     }.getOrDefault(false)
 
     private fun update(kind: HarnessKind, value: HarnessWebRuntimeState) = _states.update { it + (kind to value) }
@@ -222,6 +254,9 @@ class HarnessWebRuntimeSupervisor(
     }
 
     private fun label(kind: HarnessKind) = if (kind == HarnessKind.CODEX) "Codex" else "Claude Code"
+
+    private fun File.toGuestRuntimePath(): String =
+        "/opt/sai-dsh/" + relativeTo(provisioner.current).invariantSeparatorsPath
 
     companion object {
         private val SUPPORTED = setOf(HarnessKind.CODEX, HarnessKind.CLAUDE_CODE)
